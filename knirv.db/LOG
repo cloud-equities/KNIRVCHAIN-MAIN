@@ -1,0 +1,23 @@
+=============== Jan 5, 2025 (EST) ===============
+17:49:05.940216 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+17:49:06.035849 db@open opening
+17:49:06.037687 version@stat F·[] S·0B[] Sc·[]
+17:49:06.095718 db@janitor F·2 G·0
+17:49:06.095718 db@open done T·59.8692ms
+=============== Jan 5, 2025 (EST) ===============
+18:02:11.476203 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+18:02:11.477369 version@stat F·[] S·0B[] Sc·[]
+18:02:11.477369 db@open opening
+18:02:11.477369 journal@recovery F·1
+18:02:11.477937 journal@recovery recovering @1
+18:02:11.789990 memdb@flush created L0@2 N·1 S·332B "htt..000,v1":"htt..000,v1"
+18:02:11.791562 version@stat F·[1] S·332B[332B] Sc·[0.25]
+18:02:12.507624 db@janitor F·3 G·0
+18:02:12.507624 db@open done T·1.0302555s
+=============== Jan 5, 2025 (EST) ===============
+18:09:28.711343 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+18:09:28.712930 version@stat F·[1] S·332B[332B] Sc·[0.25]
+18:09:28.712930 db@open opening
+18:09:28.712930 journal@recovery F·1
+18:09:28.714043 journal@recovery recovering @3
+18:09:28.714560 version@stat F·[1] S·332B[332B] Sc·[0.25]

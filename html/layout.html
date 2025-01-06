@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta http-equiv="X-UA-Compatible" content="IE=edge"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KNIRVCHAIN</title>
+<style id="applicationStylesheet" type="text/css">
+	.mediaViewInfo {
+		--web-view-name: Home;
+		--web-view-id: Home;
+		--web-scale-on-resize: true;
+		--web-enable-deep-linking: true;
+	}
+	:root {
+		--web-view-ids: Home;
+	}
+		* {
+			margin: 0;
+			padding: 0;
+			box-sizing: border-box;
+			border: none;
+		}
+	#Home {
+		position: absolute;
+		width: 1583px;
+		height: 991px;
+		background-color: rgba(246,248,254,1);
+		overflow: hidden;
+		--web-view-name: Home;
+		--web-view-id: Home;
+		--web-scale-on-resize: true;
+		--web-enable-deep-linking: true;
+	}
+	/* Styles (keep all old styles so that everything looks normal) */
+    </style>
+   <script id="applicationScript">
+      window.application = new Application();
+   </script>
+</head>
+<body>
+  		<div id="Home">
+           {{block "content" .}}{{ end }}
+	  </div>
+<!-- Styles and structure (You must replace the full text, when implementing tests as required by current test scope). -->
+</body>
+</html>
