@@ -1,16 +1,15 @@
 package chain
 
 import (
+	"constants"
 	"encoding/hex"
 	"encoding/json"
+	errors "errors"
 	"fmt"
+	knirvlog "log"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/cloud-equities/KNIRVCHAIN/constants"
-	errors "github.com/cloud-equities/KNIRVCHAIN/errors"
-	knirvlog "github.com/cloud-equities/KNIRVCHAIN/log"
 )
 
 type BlockchainStruct struct {

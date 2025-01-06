@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cloud-equities/KNIRVCHAIN/log"
+	"log"
 )
 
 type ConsensusManager struct {

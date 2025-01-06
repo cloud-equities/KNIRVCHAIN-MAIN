@@ -1,14 +1,13 @@
 package chain
 
 import (
+	"constants"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"strings"
 	"time"
-
-	"github.com/cloud-equities/KNIRVCHAIN/constants"
 )
 
 type Block struct {

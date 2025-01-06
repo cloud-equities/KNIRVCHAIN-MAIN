@@ -1,7 +1,7 @@
 package uri
 
 import (
-	"github.com/KNIRVCHAIN/errors"
+	"errors"
 	//"chain"
 	//"fmt"
 	//"knirv"

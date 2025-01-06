@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/cloud-equities/KNIRVCHAIN/constants"
+	"constants"
 
 	"log"
 	"net/http"
