@@ -1,7 +1,7 @@
 package chain
 
 import (
-	"constants"
+	"chain/constants"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"

@@ -1,10 +1,10 @@
 package install
 
 import (
-	"KNIRVCHAIN/chain/utils"
 	"os"
 	"path/filepath"
 	"testing"
+	"utils"
 )
 
 func TestConfigureChainPath(t *testing.T) {

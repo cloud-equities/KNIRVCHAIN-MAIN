@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cloud-equities/KNIRVCHAIN/constants"
-	knirvlog "github.com/cloud-equities/KNIRVCHAINlog"
+	"KNIRVCHAIN/constants"
+	knirvlog "KNIRVCHAIN/log"
 )
 
 func init() {

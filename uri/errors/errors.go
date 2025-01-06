@@ -1,4 +1,4 @@
-package uri
+package errors
 
 import (
 	"fmt"

@@ -1,4 +1,4 @@
-package KNIRVCHAIN
+package utils
 
 import (
 	"os"

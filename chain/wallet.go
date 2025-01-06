@@ -1,6 +1,7 @@
 package chain
 
 import (
+	"chain/constants"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -8,8 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
-
-	"github.com/cloud-equities/KNIRVCHAIN/constants"
 )
 
 type Wallet struct {

@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"log"
+	"chain/log"
 )
 
 type ConsensusManager struct {

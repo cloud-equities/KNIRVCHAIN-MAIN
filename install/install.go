@@ -3,9 +3,9 @@ package install
 import (
 	"bufio"
 
-	"github.com/KNIRVCHAIN/chain"
-	"github.com/KNIRVCHAIN/chain/utils"
-	"github.com/KNIRVCHAIN/log"
+	"KNIRVCHAIN/chain"
+	"KNIRVCHAIN/utils"
+	"log"
 
 	"fmt"
 	"os"

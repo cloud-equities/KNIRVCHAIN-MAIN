@@ -10,7 +10,7 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/cloud-equities/KNIRVCHAIN/constants"
+	"chain/constants"
 )
 
 type Transaction struct {

@@ -1,4 +1,4 @@
-package chain
+package constants
 
 const (
 	BLOCKCHAIN_NAME           = "KNIRVCHAIN"
