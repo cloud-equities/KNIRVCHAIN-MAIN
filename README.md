@@ -4,6 +4,12 @@
   <img src="./assets/KNIRV_logo.png" alt="KNIRVCHAIN Network" style="display: block; margin: 0 auto;" />
 </p>
 
+```bash
+cd ./run_linux
+chmod +x 5000_run.bash
+./5000_run.bash
+```
+
 ## Run a node
 
 ```bash
@@ -53,12 +59,7 @@ Consume the KNIRVCHAIN Codebase Repo here:
 https://github.com/Inc-liner/KNIRVchain-master/tree/main
 *====================================*
 
-Note: The code base was recently merged from two different implementations. Much of the code in the "knirv" and "install" directories do not work or has not been implemented in the rest of the build as they should. Please apply attention to getting the knirv module integrated AFTER we've fixed all known errors and have confirmed the basic blockchain capabilities are in working order. Also, keep in mind that this golang application is utilizing three different modules:
 
-KNIRVCHAIN (main module)
-chain (all blockchain functionality. The blockchain database via leveldb is located here as well)
-knirv (all custom application functionality)
-
-PS Note: We are developing the "Opteq Wallet" elsewhere. The Opteq Wallet development is not included your scope...
 ```
+
 # KNIRVCHAIN

@@ -1,14 +1,12 @@
-module KNIRVCHAIN
+module KNIRVCHAIN-MAIN
 
-go 1.22.3
+go 1.21
 
-//require KNIRVCHAIN/chain v1.0.0
-//replace KNIRVCHAIN/chain => ./chain
-//require KNIRVCHAIN/vault v1.0.0
-//replace KNIRVCHAIN/vault => ./vault
+replace github.com/cloud-equities/KNIRVCHAIN-chain v1.2.3 => ./
 
-//replace github.com/cloud-equities/KNIRVCHAIN-vault => ./vault
+require github.com/syndtr/goleveldb v1.0.0
 
-//replace github.com/cloud-equities/KNIRVCHAIN-chain => ./chain
-
-toolchain go1.23.3
+require (
+	github.com/golang/snappy v0.0.0-20180518054509-2e65f85255db // indirect
+	github.com/joho/godotenv v1.5.1
+)

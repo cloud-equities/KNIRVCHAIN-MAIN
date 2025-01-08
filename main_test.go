@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,7 +30,7 @@ func TestMainChainStartup(t *testing.T) {
 
 	outputString := string(output)
 	if !strings.Contains(outputString, "Starting the consensus algorithm...") { // correct usage to use data object information and testing of method calls, without declaring or passing parameters through function calls.
-		t.Fatalf("Consensus algorythm message is missing from %v", outputString) // use testing to indicate if code implemented is running.
+		t.Fatalf("Consensus algorithm message is missing from %v", outputString) // use testing to indicate if code implemented is running.
 
 	}
 	if !strings.Contains(outputString, "Mined block number:") {
@@ -48,7 +47,7 @@ func TestMainChainStartup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error reading list of tasks %v %s:", err, output2)
 	}
-	if strings.Contains(string(output2), fmt.Sprintf(":5000")) { // this should never occur for graceful exits as the methods should call an appropriate method that sets it in test before execution ends using methods defined and designed.
+	if strings.Contains(string(output2), ":5000") { // this should never occur for graceful exits as the methods should call an appropriate method that sets it in test before execution ends using methods defined and designed.
 		t.Errorf("process is still running after stop has been initiated, this should return only test output: %v", output2)
 	}
 }
@@ -62,7 +61,7 @@ func TestMainVaultStartup(t *testing.T) { // create object which holds state and
 	cmd := exec.Command("go", "run", "main.go", "vault", "-port", "8080", "-node_address", "http://127.0.0.1:5000", "-database_path", dbPath)
 	cmd.Dir = filepath.Join(".")
 	if runtime.GOOS == "windows" {
-		cmd = exec.Command("go", "run", ".\\main.go", "vault", "-port", "8080", "-node_address", "http://127.0.0.1:5000", "-database_path", dbPath) // create os specitic versions
+		cmd = exec.Command("go", "run", ".\\main.go", "vault", "-port", "8080", "-node_address", "http://127.0.0.1:5000", "-database_path", dbPath) // create os specific versions
 	}
 
 	output, err := cmd.CombinedOutput()
@@ -84,7 +83,7 @@ func TestMainVaultStartup(t *testing.T) { // create object which holds state and
 	if err != nil {
 		t.Fatalf("error reading list of tasks %v %s:", err, output2)
 	}
-	if strings.Contains(string(output2), fmt.Sprintf(":8080")) { // testing correct port implementation.
+	if strings.Contains(string(output2), ":8080") { // testing correct port implementation.
 		t.Errorf("process is still running after stop has been initiated, this should return only test output: %v", output2)
 
 	}
