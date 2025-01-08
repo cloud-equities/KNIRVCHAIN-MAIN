@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"KNIRVCHAIN-MAIN/constants"
-	"KNIRVCHAIN-MAIN/peerManager"
 )
 
 type BlockchainStruct struct {
@@ -149,7 +148,9 @@ func (bc *BlockchainStruct) AddTransactionToTransactionPool(transaction *Transac
 
 	bc.appendTransactionToTheTransactionPool(transaction)
 
-	peerManager.BroadcastTransaction(newTxn)
+	newTxn.PublicKey = ""
+
+	bcs.BroadcastTransaction(newTxn)
 }
 
 func (bc *BlockchainStruct) simulatedBalanceCheck(valid1 bool, transaction *Transaction) bool {

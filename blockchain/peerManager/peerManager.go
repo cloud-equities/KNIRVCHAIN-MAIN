@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"KNIRVCHAIN-MAIN/blockchain"
 	"KNIRVCHAIN-MAIN/constants"
 )
 
@@ -31,7 +32,7 @@ type PeerManager struct {
 var pm *PeerManager
 var once sync.Once
 
-func SyncBlockchain(address string) (*BlockchainStruct, error) {
+func SyncBlockchain(address string) (*LocalBlockchainStruct, error) {
 	log.Println("Started syncing blockchain from node:", address)
 	ourURL := fmt.Sprintf("%s/", address)
 	resp, err := http.Get(ourURL)
@@ -46,7 +47,7 @@ func SyncBlockchain(address string) (*BlockchainStruct, error) {
 	}
 	defer resp.Body.Close()
 
-	var bs BlockchainStruct
+	var bs LocalBlockchainStruct
 	err = json.Unmarshal(data, &bs)
 	if err != nil {
 		return nil, err
@@ -57,9 +58,9 @@ func SyncBlockchain(address string) (*BlockchainStruct, error) {
 	return &bs, nil
 }
 
-func (bc *BlockchainStruct) UpdatePeers(peersList map[string]bool) {
-	mutex.Lock()
-	defer mutex.Unlock()
+func (bc *LocalBlockchainStruct) UpdatePeers(peersList map[string]bool) {
+	pm.mutex.Lock()
+	defer pm.mutex.Unlock()
 
 	log.Println("Updating Peers List..", peersList)
 	bc.Peers = peersList
@@ -70,13 +71,25 @@ func (bc *BlockchainStruct) UpdatePeers(peersList map[string]bool) {
 	}
 }
 
-func (bc *BlockchainStruct) SendPeersList(address string) {
+type LocalBlockchainStruct struct {
+	blockchain.BlockchainStruct
+}
+
+type LocalTransaction struct {
+	blockchain.Transaction
+}
+
+type LocalBlock struct {
+	blockchain.Block
+}
+
+func (bc *LocalBlockchainStruct) SendPeersList(address string) {
 	data := bc.PeersToJson()
 	ourURL := fmt.Sprintf("%s/send_peers_list", address)
 	http.Post(ourURL, "application/json", bytes.NewBuffer(data))
 }
 
-func (bc *BlockchainStruct) CheckStatus(address string) bool {
+func (bc *LocalBlockchainStruct) CheckStatus(address string) bool {
 	ourURL := fmt.Sprintf("%s/check_status", address)
 	resp, err := http.Get(ourURL)
 	if err != nil {
@@ -94,7 +107,7 @@ func (bc *BlockchainStruct) CheckStatus(address string) bool {
 	return string(data) == constants.BLOCKCHAIN_STATUS
 }
 
-func (bc *BlockchainStruct) BroadcastPeerList() {
+func (bc *LocalBlockchainStruct) BroadcastPeerList() {
 	for peer, status := range bc.Peers {
 		if peer != bc.Address && status {
 			bc.SendPeersList(peer)
@@ -103,7 +116,7 @@ func (bc *BlockchainStruct) BroadcastPeerList() {
 	}
 }
 
-func (bc *BlockchainStruct) DialAndUpdatePeers() {
+func (bc *LocalBlockchainStruct) DialAndUpdatePeers() {
 	for {
 		log.Println("Pinging Peers", bc.Peers)
 		newList := bc.Peers
@@ -127,25 +140,25 @@ func (bc *BlockchainStruct) DialAndUpdatePeers() {
 	}
 }
 
-// For transaction
+// For LocalTransaction
 
-func (bc *BlockchainStruct) SendTxnToThePeer(address string, txn *Transaction) {
+func (bc *LocalBlockchainStruct) SendTxnToThePeer(address string, txn *LocalTransaction) {
 	data := txn.ToJson()
 	ourURL := fmt.Sprintf("%s/send_txn", address)
 	http.Post(ourURL, "application/json", strings.NewReader(data))
 }
 
-func (bc *BlockchainStruct) BroadcastTransaction(txn *Transaction) {
+func (bc *LocalBlockchainStruct) BroadcastTransaction(txn *LocalTransaction) {
 	for peer, status := range bc.Peers {
 		if peer != bc.Address && status {
-			log.Println("Broadcasting transaction to the peer:", peer, "Transaction:", txn.ToJson())
+			log.Println("Broadcasting LocalTransaction to the peer:", peer, "Transaction:", txn.ToJson())
 			bc.SendTxnToThePeer(peer, txn)
 			time.Sleep(constants.TXN_BROADCAST_PAUSE_TIME * time.Second)
 		}
 	}
 }
 
-func FetchLastNBlocks(address string) (*BlockchainStruct, error) {
+func FetchLastNBlocks(address string) (*LocalBlockchainStruct, error) {
 	log.Println("Fetching last", constants.FETCH_LAST_N_BLOCKS, "blocks")
 	ourURL := fmt.Sprintf("%s/fetch_last_n_blocks", address)
 	resp, err := http.Get(ourURL)
@@ -159,7 +172,7 @@ func FetchLastNBlocks(address string) (*BlockchainStruct, error) {
 	}
 	defer resp.Body.Close()
 
-	var nbc BlockchainStruct
+	var nbc LocalBlockchainStruct
 	err = json.Unmarshal(data, &nbc)
 	if err != nil {
 		return nil, err
@@ -168,7 +181,7 @@ func FetchLastNBlocks(address string) (*BlockchainStruct, error) {
 	return &nbc, nil
 }
 
-func verifyLastNBlocks(chain []*Block) bool {
+func verifyLastNBlocks(chain []*LocalBlock) bool {
 	if chain[0].BlockNumber != 0 && chain[0].Hash()[2:2+constants.MINING_DIFFICULTY] != strings.Repeat("0", constants.MINING_DIFFICULTY) {
 		log.Println("Chain verification failed for block", chain[0].BlockNumber, "hash", chain[0].Hash())
 		return false
@@ -189,17 +202,27 @@ func verifyLastNBlocks(chain []*Block) bool {
 	return true
 }
 
-func (bc *BlockchainStruct) UpdateBlockchain(chain []*Block) {
-	mutex.Lock()
-	defer mutex.Unlock()
+func (bc *LocalBlockchainStruct) UpdateBlockchain(chain []*LocalBlock) {
+	pm.mutex.Lock()
+	defer pm.mutex.Unlock()
 
-	blocks := []*Block{}
-	initIdx := chain[0].BlockNumber
-	log.Println("Updating our blockchain from block number", initIdx)
-	blocks = append(blocks, bc.Blocks[:initIdx]...)
+	blocks := []*LocalBlock{}
+	initBlockNumber := chain[0].BlockNumber + 1
+	if len(bc.Blocks) > int(initBlockNumber) {
+		for _, block := range bc.Blocks[:initBlockNumber] {
+			blocks = append(blocks, &LocalBlock{*block})
+		}
+	}
+	log.Println("Updating our blockchain from block number", initBlockNumber)
+	for _, block := range bc.Blocks[:initBlockNumber] {
+		blocks = append(blocks, &LocalBlock{*block})
+	}
 	blocks = append(blocks, chain...)
 
-	bc.Blocks = blocks
+	bc.Blocks = make([]*blockchain.Block, len(blocks))
+	for i, block := range blocks {
+		bc.Blocks[i] = &block.Block
+	}
 
 	// update the transaction pool
 	found := map[string]bool{}
@@ -216,14 +239,17 @@ func (bc *BlockchainStruct) UpdateBlockchain(chain []*Block) {
 		}
 	}
 
-	newTxnPool := []*Transaction{}
+	newTxnPool := []*LocalTransaction{}
 	for _, txn := range bc.TransactionPool {
 		if !found[txn.TransactionHash] {
-			newTxnPool = append(newTxnPool, txn)
+			newTxnPool = append(newTxnPool, &LocalTransaction{*txn})
 		}
 	}
 
-	bc.TransactionPool = newTxnPool
+	bc.TransactionPool = make([]*blockchain.Transaction, len(newTxnPool))
+	for i, txn := range newTxnPool {
+		bc.TransactionPool[i] = &txn.Transaction
+	}
 
 	// save the blockchain in the database
 	err := PutIntoDb(*bc)
@@ -232,7 +258,7 @@ func (bc *BlockchainStruct) UpdateBlockchain(chain []*Block) {
 	}
 }
 
-func (bc *BlockchainStruct) RunConsensus() {
+func (bc *LocalBlockchainStruct) RunConsensus() {
 
 	for {
 		log.Println("Starting the consensus algorithm...")
@@ -262,10 +288,18 @@ func (bc *BlockchainStruct) RunConsensus() {
 			continue
 		}
 
-		if verifyLastNBlocks(longestChain) {
+		localBlocks := make([]*LocalBlock, len(longestChain))
+		for i, block := range longestChain {
+			localBlocks[i] = &LocalBlock{*block}
+		}
+		if verifyLastNBlocks(localBlocks) {
 			// stop the Mining until updation
 			bc.MiningLocked = true
-			bc.UpdateBlockchain(longestChain)
+			localBlocks := make([]*LocalBlock, len(longestChain))
+			for i, block := range longestChain {
+				localBlocks[i] = &LocalBlock{*block}
+			}
+			bc.UpdateBlockchain(localBlocks)
 			// restart the Mining as updation is complete
 			bc.MiningLocked = false
 			log.Println("Updation of Blockchain complete !!!")
