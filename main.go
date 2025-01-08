@@ -14,6 +14,7 @@ import (
 	"KNIRVCHAIN-MAIN/blockchain"
 	"KNIRVCHAIN-MAIN/blockchainserver"
 	"KNIRVCHAIN-MAIN/constants"
+	peerManager "KNIRVCHAIN-MAIN/peermanager"
 	"KNIRVCHAIN-MAIN/walletserver"
 )
 
@@ -148,34 +149,35 @@ func main() {
 			if *remoteNode == "" {
 
 				genesisBlock := blockchain.NewBlock("0x0", 0, 0)
-				blockchain1 := blockchain.NewBlockchain(*genesisBlock, "http://127.0.0.1:"+strconv.Itoa(int(*chainPort)))
+				pm := peermanager.NewPeerManager(*chainPort, cfg.PeerBroadcastPauseTime, cfg.PeerPingPauseTime, cfg.TxnBroadcastPauseTime, cfg.FetchLastNBlocks, cfg.ConsensusPauseTime)
+				for _, peerAddress := range cfg.PeerAddresses {
+					pm.AddPeer(peerAddress)
+				}
+				blockchain1 := blockchain.NewBlockchain(*genesisBlock, "http://127.0.0.1:"+strconv.Itoa(int(*chainPort)), pm)
 				blockchain1.Peers[blockchain1.Address] = true
 				bcs := blockchainserver.NewBlockchainServer(*chainPort, blockchain1)
 				wg.Add(4)
 
-				for _, peerAddress := range cfg.PeerAddresses {
-					pm.AddPeer(peerAddress) // Assuming AddPeer handles connecting to new peers
-				}
 				go bcs.Start()
 				go bcs.BlockchainPtr.ProofOfWorkMining(*chainMiner)
-				go bcs.BlockchainPtr.DialAndUpdatePeers()
-				go bcs.BlockchainPtr.RunConsensus()
+				go pm.BlockchainPtr.DialAndUpdatePeers()
+				go pm.BlockchainPtr.RunConsensus()
 				wg.Wait()
 			} else {
-				blockchain1, err := blockchain.SyncBlockchain(*remoteNode)
+				blockchain1, err := peerManager.SyncBlockchain(*remoteNode)
 				if err != nil {
 					fmt.Println(err.Error())
 					os.Exit(1)
 				}
-
+				pm := peermanager.NewPeerManager(*chainPort, cfg.PeerBroadcastPauseTime, cfg.PeerPingPauseTime, cfg.TxnBroadcastPauseTime, cfg.FetchLastNBlocks, cfg.ConsensusPauseTime)
 				blockchain2 := blockchain.NewBlockchainFromSync(blockchain1, "http://127.0.0.1:"+strconv.Itoa(int(*chainPort)))
 				blockchain2.Peers[blockchain2.Address] = true
 				bcs := blockchainserver.NewBlockchainServer(*chainPort, blockchain2)
 				wg.Add(4)
 				go bcs.Start()
 				go bcs.BlockchainPtr.ProofOfWorkMining(*chainMiner)
-				go bcs.BlockchainPtr.DialAndUpdatePeers()
-				go bcs.BlockchainPtr.RunConsensus()
+				go pm.BlockchainPtr.DialAndUpdatePeers()
+				go pm.BlockchainPtr.RunConsensus()
 				wg.Wait()
 			}
 

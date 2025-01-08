@@ -10,6 +10,8 @@ import (
 
 	"KNIRVCHAIN-MAIN/blockchain"
 	"KNIRVCHAIN-MAIN/constants"
+	"KNIRVCHAIN-MAIN/peerManager"
+	"KNIRVCHAIN-MAIN/transaction"
 )
 
 type BlockchainServer struct {
@@ -81,7 +83,7 @@ func (bcs *BlockchainServer) SendTxnToTheBlockchain(w http.ResponseWriter, req *
 
 		defer req.Body.Close()
 
-		var newTxn blockchain.Transaction
+		var newTxn transaction.Transaction
 
 		err = json.Unmarshal(request, &newTxn)
 		if err != nil {
@@ -124,7 +126,7 @@ func (bcs *BlockchainServer) SendPeersList(w http.ResponseWriter, req *http.Requ
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		go bcs.BlockchainPtr.UpdatePeers(peersList)
+		go peerManager.GetPeerManager().UpdatePeers(peersList)
 		res := map[string]string{}
 		res["status"] = "success"
 		x, err := json.Marshal(res)

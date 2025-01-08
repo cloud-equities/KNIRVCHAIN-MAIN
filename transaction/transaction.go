@@ -1,4 +1,4 @@
-package blockchain
+package transaction
 
 import (
 	"crypto/ecdsa"
@@ -14,15 +14,33 @@ import (
 )
 
 type Transaction struct {
-	From            string `json:"from"`
-	To              string `json:"to"`
-	Value           uint64 `json:"value"`
-	Data            []byte `json:"data"`
-	Status          string `json:"status"`
-	Timestamp       int64  `json:"timestamp"`
-	TransactionHash string `json:"transaction_hash"`
-	PublicKey       string `json:"public_key,omitempty"`
-	Signature       []byte `json:"Signature"`
+	From            string            `json:"from"`
+	To              string            `json:"to"`
+	Value           uint64            `json:"value"`
+	Data            []byte            `json:"data"`
+	Status          string            `json:"status"`
+	Timestamp       int64             `json:"timestamp"`
+	TransactionHash string            `json:"transaction_hash"`
+	PublicKey       string            `json:"public_key,omitempty"`
+	Signature       []byte            `json:"Signature"`
+	TransactionPool []TransactionPool `json:"transaction_pool"`
+}
+
+type TransactionPool struct {
+	Transactions []TransactionsList `json:"transactions"`
+}
+
+type TransactionsList struct {
+	Transaction Transaction `json:"transaction"`
+}
+
+// NewTransactionPool creates a new TransactionPool from a slice of Transactions
+func NewTransactionPool(transactions []*Transaction) TransactionPool {
+	var txnLists []TransactionsList
+	for _, txn := range transactions {
+		txnLists = append(txnLists, TransactionsList{Transaction: *txn})
+	}
+	return TransactionPool{Transactions: txnLists}
 }
 
 func NewTransaction(from, to string, value uint64, data []byte) *Transaction {

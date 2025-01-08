@@ -7,14 +7,15 @@ import (
 	"time"
 
 	"KNIRVCHAIN-MAIN/constants"
+	"KNIRVCHAIN-MAIN/transaction"
 )
 
 type Block struct {
-	BlockNumber  uint64         `json:"block_number"`
-	PrevHash     string         `json:"prevHash"`
-	Timestamp    int64          `json:"timestamp"`
-	Nonce        int            `json:"nonce"`
-	Transactions []*Transaction `json:"transactions"`
+	BlockNumber  uint64                     `json:"block_number"`
+	PrevHash     string                     `json:"prevHash"`
+	Timestamp    int64                      `json:"timestamp"`
+	Nonce        int                        `json:"nonce"`
+	Transactions []*transaction.Transaction `json:"transactions"`
 }
 
 func NewBlock(prevHash string, nonce int, blockNumber uint64) *Block {
@@ -22,7 +23,7 @@ func NewBlock(prevHash string, nonce int, blockNumber uint64) *Block {
 	block.PrevHash = prevHash
 	block.Timestamp = time.Now().UnixNano()
 	block.Nonce = nonce
-	block.Transactions = []*Transaction{}
+	block.Transactions = []*transaction.Transaction{}
 	block.BlockNumber = blockNumber
 
 	return block
@@ -48,7 +49,7 @@ func (b Block) Hash() string {
 	return formattedHexRep
 }
 
-func (b *Block) AddTransactionToTheBlock(txn *Transaction) {
+func (b *Block) AddTransactionToTheBlock(txn *transaction.Transaction) {
 	// check if the txn verification is a success or a failure
 	if txn.Status == constants.TXN_VERIFICATION_SUCCESS {
 		txn.Status = constants.SUCCESS
