@@ -15,6 +15,7 @@ import (
 	"KNIRVCHAIN-MAIN/blockchain"
 	"KNIRVCHAIN-MAIN/blockchainserver"
 	"KNIRVCHAIN-MAIN/constants"
+	"KNIRVCHAIN-MAIN/events"
 	"KNIRVCHAIN-MAIN/peerManager"
 	"KNIRVCHAIN-MAIN/walletserver"
 )
@@ -150,9 +151,11 @@ func main() {
 			if *remoteNode == "" {
 
 				genesisBlock := block.NewBlock("0x0", 0, 0)
-				pm := peerManager.GetPeerManager()
+				blockAddedChan := make(chan events.BlockAddedEvent)
+				transactionAddedChan := make(chan events.TransactionAddedEvent)
+				pm := peerManager.GetPeerManager(blockAddedChan, transactionAddedChan)
 				for _, peerAddress := range cfg.PeerAddresses {
-					pm.AddPeer(peerAddress)
+					pm.AddPeer(peerManager.Peer{Address: peerAddress})
 				}
 
 				blockchain1 := blockchain.NewBlockchain(*genesisBlock, "http://127.0.0.1:"+strconv.Itoa(int(*chainPort)), pm)
@@ -163,10 +166,10 @@ func main() {
 
 				go bcs.Start()
 
-				peerManager.GetPeerManager()
+				peerManager.GetPeerManager(blockAddedChan, transactionAddedChan)
 				go bcs.BlockchainPtr.ProofOfWorkMining(*chainMiner)
 				go pm.DialAndUpdatePeers()
-				go bcs.BlockchainPtr.RunConsensus()
+				go consensus.RunConsensus()
 				wg.Wait()
 			} else {
 				blockchain1, err := peerManager.SyncBlockchain(*remoteNode)
@@ -174,15 +177,18 @@ func main() {
 					fmt.Println(err.Error())
 					os.Exit(1)
 				}
-				pm := peerManager.GetPeerManager()
-				blockchain2 := blockchain.NewBlockchainFromSync(blockchain1, "http://127.0.0.1:"+strconv.Itoa(int(*chainPort)))
+				blockAddedChan := make(chan events.BlockAddedEvent)
+				transactionAddedChan := make(chan events.TransactionAddedEvent)
+				pm := peerManager.GetPeerManager(blockAddedChan, transactionAddedChan)
+
+				blockchain2 := blockchain.NewBlockchainFromSync(blockchain1, "http://127.0.0.1:"+strconv.Itoa(int(*chainPort)), &pm.Broadcaster)
 				blockchain2.Peers[blockchain2.Address] = true
 				bcs := blockchainserver.NewBlockchainServer(*chainPort, blockchain2)
 				wg.Add(4)
 				go bcs.Start()
 				go bcs.BlockchainPtr.ProofOfWorkMining(*chainMiner)
 				go pm.DialAndUpdatePeers()
-				go bcs.BlockchainPtr.RunConsensus()
+				go consensus.RunConsensus()
 				wg.Wait()
 			}
 

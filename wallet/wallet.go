@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"math/big"
 
-	"KNIRVCHAIN-MAIN/blockchain"
 	"KNIRVCHAIN-MAIN/constants"
+	"KNIRVCHAIN-MAIN/transaction"
 )
 
 type Wallet struct {
@@ -63,7 +63,7 @@ func (w *Wallet) GetAddress() string {
 	return address
 }
 
-func (w *Wallet) GetSignedTxn(unsignedTxn blockchain.Transaction) (*blockchain.Transaction, error) {
+func (w *Wallet) GetSignedTxn(unsignedTxn transaction.Transaction) (*transaction.Transaction, error) {
 	bs, err := json.Marshal(unsignedTxn)
 	if err != nil {
 		return nil, err
@@ -75,7 +75,7 @@ func (w *Wallet) GetSignedTxn(unsignedTxn blockchain.Transaction) (*blockchain.T
 		return nil, err
 	}
 
-	var signedTxn blockchain.Transaction
+	var signedTxn transaction.Transaction
 	signedTxn.From = unsignedTxn.From
 	signedTxn.To = unsignedTxn.To
 	signedTxn.Data = unsignedTxn.Data

@@ -11,8 +11,8 @@ import (
 	"net/url"
 	"strconv"
 
-	"KNIRVCHAIN-MAIN/blockchain"
 	"KNIRVCHAIN-MAIN/constants"
+	"KNIRVCHAIN-MAIN/transaction"
 	"KNIRVCHAIN-MAIN/wallet"
 )
 
@@ -95,7 +95,7 @@ func (ws *WalletServer) SendTxnToTheBlockchain(w http.ResponseWriter, req *http.
 			return
 		}
 		defer req.Body.Close()
-		var txn1 blockchain.Transaction
+		var txn1 transaction.Transaction
 		err = json.Unmarshal(dataBs, &txn1)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -104,7 +104,7 @@ func (ws *WalletServer) SendTxnToTheBlockchain(w http.ResponseWriter, req *http.
 
 		wallet1 := wallet.NewWalletFromPrivateKeyHex(privateKey)
 
-		myTxn := blockchain.NewTransaction(wallet1.GetAddress(), txn1.To, txn1.Value, []byte{})
+		myTxn := transaction.NewTransaction(wallet1.GetAddress(), txn1.To, txn1.Value, []byte{})
 		myTxn.Status = constants.PENDING
 		newTxn, err := wallet1.GetSignedTxn(*myTxn)
 		if err != nil {
