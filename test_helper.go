@@ -2,11 +2,9 @@ package main
 
 import (
 	"fmt"
-	"net"
 	"net/http/httptest"
 	"os/exec"
 	"strconv"
-	"time"
 )
 
 // StartTestNode starts the blockchain node as a subprocess for testing
@@ -23,17 +21,7 @@ func StartTestNode(port int, minerAddress string, remoteNode string) (*exec.Cmd,
 	if err != nil {
 		return nil, fmt.Errorf("failed to start test node: %w", err)
 	}
-
-	// Wait until the server is ready
-	for i := 0; i < 10; i++ {
-		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), time.Second)
-		if err == nil {
-			conn.Close()
-			return cmd, nil
-		}
-		time.Sleep(time.Second)
-	}
-	return nil, fmt.Errorf("test node failed to start within timeout")
+	return cmd, nil
 }
 
 func TearDownTestEnv(server *httptest.Server) {

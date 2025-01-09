@@ -33,13 +33,11 @@ func (bcs *BlockchainServer) GetBlockchain(w http.ResponseWriter, req *http.Requ
 	w.Header().Set("Content-Type", "application/json")
 	if req.Method == http.MethodGet {
 		blocks := bcs.BlockchainPtr.Blocks
-		blockJSON, err := json.Marshal(blocks)
-		if err != nil {
+		w.WriteHeader(http.StatusOK)
+		if err := json.NewEncoder(w).Encode(blocks); err != nil {
 			http.Error(w, "Failed to marshal blocks to json", http.StatusInternalServerError)
 			return
 		}
-		w.WriteHeader(http.StatusOK)
-		w.Write(blockJSON)
 
 	} else {
 		http.Error(w, "Invalid Method", http.StatusBadRequest)
@@ -98,9 +96,9 @@ func (bcs *BlockchainServer) handleGetTransactions(w http.ResponseWriter, r *htt
 func (bcs *BlockchainServer) SendTxnToTheBlockchain(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if req.Method == http.MethodPost {
-		var txn transaction.Transaction // Directly unmarshal into transaction.Transaction
+		var txn transaction.Transaction
 
-		if err := json.NewDecoder(req.Body).Decode(&txn); err != nil { // Decode request
+		if err := json.NewDecoder(req.Body).Decode(&txn); err != nil {
 			http.Error(w, "Invalid transaction format", http.StatusBadRequest)
 			return
 		}
@@ -109,15 +107,17 @@ func (bcs *BlockchainServer) SendTxnToTheBlockchain(w http.ResponseWriter, req *
 			http.Error(w, "Invalid Txn Signature", http.StatusBadRequest)
 			return
 		}
-
-		err := bcs.BlockchainPtr.AddTransaction(txn) // Add to Blockchain Transaction Pool
-
+		err := bcs.BlockchainPtr.AddTransaction(txn)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Failed to add transaction: %v", err), http.StatusInternalServerError)
+			log.Printf("Failed to add transaction: %v", err)
 			return
 		}
-		w.WriteHeader(http.StatusCreated) // Return StatusCreated *only* on success
-		json.NewEncoder(w).Encode(txn)
+		w.WriteHeader(http.StatusCreated)
+		if err := json.NewEncoder(w).Encode(txn); err != nil {
+			http.Error(w, "Failed to encode txn", http.StatusInternalServerError)
+			return
+		}
 
 	} else {
 		http.Error(w, "Only POST requests are allowed", http.StatusMethodNotAllowed)
@@ -205,7 +205,6 @@ func (bcs *BlockchainServer) Start() {
 			log.Fatalf("Failed to start blockchain server: %v", err)
 		}
 	}()
-
 }
 
 func (bcs *BlockchainServer) Stop() {

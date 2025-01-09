@@ -18,7 +18,6 @@ type Block struct {
 	Timestamp    int64                      `json:"timestamp"`
 	Nonce        int                        `json:"nonce"`
 	Transactions []*transaction.Transaction `json:"transactions"`
-	// HashVal      string                     `json:"hash"` // Removed HashVal
 }
 
 func NewBlock(prevHash string, nonce int, blockNumber uint64) *Block {
@@ -58,7 +57,6 @@ func (b *Block) Mine(difficulty int) error {
 		desiredHash := strings.Repeat("0", difficulty)
 		ourSolutionHash := guessHash[2 : 2+difficulty]
 		if ourSolutionHash == desiredHash {
-			//b.HashVal = guessHash //Store the successful hash // not needed anymore
 			return nil
 		}
 
@@ -74,27 +72,4 @@ func (b *Block) AddTransactionToTheBlock(txn *transaction.Transaction) error {
 
 	b.Transactions = append(b.Transactions, txn)
 	return nil
-}
-
-func (b Block) MarshalJSON() ([]byte, error) {
-	// Ensure transactions are handled gracefully even if the slice is nil.
-
-	txns := b.Transactions
-	if txns == nil { // Handle the nil case explicitly
-		txns = []*transaction.Transaction{} // Or initialize to an empty slice if needed
-	}
-
-	return json.Marshal(&struct {
-		BlockNumber  uint64                     `json:"block_number"`
-		PrevHash     string                     `json:"prevHash"`
-		Timestamp    int64                      `json:"timestamp"`
-		Nonce        int                        `json:"nonce"`
-		Transactions []*transaction.Transaction `json:"transactions"`
-	}{
-		BlockNumber:  b.BlockNumber,
-		PrevHash:     b.PrevHash,
-		Timestamp:    b.Timestamp,
-		Nonce:        b.Nonce,
-		Transactions: txns,
-	})
 }

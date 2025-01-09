@@ -24,6 +24,7 @@ type BlockchainStruct struct {
 	BlockAdded       chan events.BlockAddedEvent        `json:"-"`
 	TransactionAdded chan events.TransactionAddedEvent  `json:"-"`
 	PeerManager      *peerManager.PeerManager           `json:"-"`
+	Mutex            sync.Mutex                         `json:"-"`
 }
 
 var mutex sync.Mutex
@@ -51,6 +52,7 @@ func NewBlockchain(genesisBlock block.Block, address string, broadcaster transac
 		blockchainStruct.TransactionAdded = make(chan events.TransactionAddedEvent)
 		blockchainStruct.Broadcaster = broadcaster
 		blockchainStruct.PeerManager = peerManager
+		blockchainStruct.Mutex = sync.Mutex{}
 		//	err := PutIntoDb(*blockchainStruct)
 		//if err != nil {
 		//	panic(err.Error())
@@ -81,12 +83,13 @@ func NewBlockchainFromSync(remoteBlocks []*peerManager.RemoteBlock, address stri
 		Broadcaster:  broadcaster, // Your transaction broadcaster
 		MiningLocked: false,       // Add other necessary fields
 		PeerManager:  peerManager,
+		Mutex:        sync.Mutex{},
 	}
 	return bc
 }
 
-func (bc BlockchainStruct) ToJson() string {
-	nb, err := json.Marshal(bc)
+func (bc *BlockchainStruct) ToJson() string { // Change to pointer receiver
+	nb, err := json.Marshal(bc) //Marshal the current instance instead of a copy
 
 	if err != nil {
 		return err.Error()
@@ -96,6 +99,8 @@ func (bc BlockchainStruct) ToJson() string {
 }
 
 func (bc *BlockchainStruct) AddBlock(b *block.Block) {
+	bc.Mutex.Lock()
+	defer bc.Mutex.Unlock()
 
 	m := map[string]bool{}
 	for _, txn := range b.Transactions {
@@ -112,10 +117,11 @@ func (bc *BlockchainStruct) AddBlock(b *block.Block) {
 	}
 
 	bc.TransactionPool = newTxnPool
+
 	bc.Blocks = append(bc.Blocks, b)
 
 	// save the blockchain to our database
-	err := PutIntoDb(*bc)
+	err := PutIntoDb(bc)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -130,7 +136,7 @@ func (bc *BlockchainStruct) appendTransactionToTheTransactionPool(transaction *t
 	bc.TransactionPool = append(bc.TransactionPool, transaction)
 
 	// save the blockchain to our database
-	err := PutIntoDb(*bc)
+	err := PutIntoDb(bc)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -200,8 +206,8 @@ func (bc *BlockchainStruct) MineNewBlock(minersAddress string) (*block.Block, er
 		newTxn.Timestamp = txn.Timestamp // Ensure timestamp is copied
 		newTxn.Status = txn.Status
 		newTxn.Signature = txn.Signature
-		newTxn.PublicKey = txn.PublicKey                                  // Ensure public key is copied
-		if err := newBlock.AddTransactionToTheBlock(newTxn); err != nil { // Use AddTransactionToTheBlock
+		newTxn.PublicKey = txn.PublicKey // Ensure public key is copied
+		if err := newBlock.AddTransactionToTheBlock(newTxn); err != nil {
 			return nil, fmt.Errorf("failed to add transaction to block: %w", err)
 		}
 
@@ -306,8 +312,8 @@ func (bc *BlockchainStruct) AddTransaction(txn transaction.Transaction) error {
 		return fmt.Errorf("txn verification failed")
 	}
 
-	mutex.Lock()
-	defer mutex.Unlock()
+	bc.Mutex.Lock()
+	defer bc.Mutex.Unlock()
 
 	bc.TransactionPool = append(bc.TransactionPool, &txn)
 	bc.TransactionAdded <- events.TransactionAddedEvent{Transaction: &txn} // Send event *after* adding to pool

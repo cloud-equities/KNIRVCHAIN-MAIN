@@ -1,14 +1,13 @@
 package blockchain
 
 import (
-	"encoding/json"
-
 	"KNIRVCHAIN-MAIN/constants"
+	"encoding/json"
 
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
-func PutIntoDb(bs BlockchainStruct) error {
+func PutIntoDb(bs *BlockchainStruct) error { // Changed to use pointer
 	db, err := leveldb.OpenFile(constants.BLOCKCHAIN_DB_PATH, nil)
 	if err != nil {
 		return err

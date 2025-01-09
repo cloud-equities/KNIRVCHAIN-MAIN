@@ -103,26 +103,25 @@ func (cm *ConsensusManager) RunConsensus(startMining chan bool) {
 		}
 
 		if !longestChainIsOurs {
-
-			cm.Blockchain.MiningLocked = true                     // Lock before updating
-			defer func() { cm.Blockchain.MiningLocked = false }() // Unlock after updating
-
-			newBlocks := []*block.Block{}
-
-			for _, rb := range longestChain {
-				newBlock := &block.Block{
-					BlockNumber:  rb.BlockNumber,
-					Nonce:        rb.Nonce,
-					PrevHash:     rb.PrevHash,
-					Timestamp:    rb.Timestamp,
-					Transactions: rb.Transactions,
+			cm.Blockchain.Mutex.Lock()
+			defer cm.Blockchain.Mutex.Unlock()
+			//Deep Copy
+			newBlocks := make([]*block.Block, len(longestChain))
+			for i, b := range longestChain {
+				newBlocks[i] = &block.Block{ // Copy individual fields (or implement a DeepCopy method for Block)
+					BlockNumber:  b.BlockNumber,
+					Nonce:        b.Nonce,
+					PrevHash:     b.PrevHash,
+					Timestamp:    b.Timestamp,
+					Transactions: b.Transactions,
 				}
-
-				newBlocks = append(newBlocks, newBlock)
 			}
-			startMining <- true                         // signal to start mining.
-			cm.Blockchain.Blocks = newBlocks            // Update the blockchain
-			err := blockchain.PutIntoDb(*cm.Blockchain) // Save to DB after successful update
+			cm.Blockchain.Blocks = newBlocks
+			cm.Blockchain.MiningLocked = true
+			defer func() { cm.Blockchain.MiningLocked = false }()
+
+			startMining <- true                        // signal to start mining.
+			err := blockchain.PutIntoDb(cm.Blockchain) // Save to DB after successful update
 			if err != nil {
 				log.Printf("Failed to save updated blockchain to DB: %s", err) // Log and continue, consensus will retry
 			} else {

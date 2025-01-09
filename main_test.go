@@ -94,19 +94,14 @@ func (bcs *MockBlockchainServer) handleGetPeers(w http.ResponseWriter, r *http.R
 }
 
 func (bcs *MockBlockchainServer) handleGetBlocks(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json") // Ensure correct Content-Type
+	w.Header().Set("Content-Type", "application/json")
 	blocks := bcs.BlockchainPtr.Blocks
-	// Marshal the blocks *directly*
-	blockJSON, err := json.Marshal(blocks)
-
-	if err != nil {
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(blocks); err != nil {
 		http.Error(w, "Failed to marshal blocks to json", http.StatusInternalServerError)
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-
-	w.Write(blockJSON) // Write the marshaled JSON
 }
 
 func (bcs *MockBlockchainServer) handleGetTransactions(w http.ResponseWriter, r *http.Request) {
@@ -294,7 +289,7 @@ func Test_WalletSubcommand(t *testing.T) {
 
 	var transactions []*transaction.Transaction
 	// Retry logic to handle eventual consistency
-	for i := 0; i < 5; i++ { // Retry up to 5 times
+	for i := 0; i < 5; i++ {
 
 		resp, err = http.Get(url)
 		if err != nil {
@@ -302,21 +297,31 @@ func Test_WalletSubcommand(t *testing.T) {
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode == http.StatusOK { // Only unmarshal if status is OK
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				t.Fatalf("Failed to read response body: %v", err)
-			}
-			err = json.Unmarshal(body, &transactions)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatalf("Failed to read response body: %v", err)
+		}
+		if resp.StatusCode == http.StatusOK {
+			t.Logf("Attempt %d: Status code: %v, body: %s", i+1, resp.StatusCode, body)
 
+			err = json.Unmarshal(body, &transactions)
 			if err == nil {
-				break // Exit retry loop if unmarshal successful
+				if len(transactions) >= 1 { //Check that at least one transaction is present.
+					break
+				} else {
+					t.Logf("Attempt %d: No transactions in the pool. Retrying...", i+1)
+
+					time.Sleep(time.Second)
+				}
+
 			} else {
 				t.Logf("Attempt %d: Failed to unmarshal transactions: %v. Retrying...", i+1, err)
-				time.Sleep(time.Second) // Wait before retrying
+				time.Sleep(time.Second)
+
 			}
+
 		} else {
-			t.Logf("Attempt %d: Expected status OK but got %v. Retrying...", i+1, resp.StatusCode)
+			t.Logf("Attempt %d: Expected status OK but got %v, body: %s. Retrying...", i+1, resp.StatusCode, string(body))
 			time.Sleep(time.Second)
 		}
 
