@@ -1,12 +1,10 @@
-package consensus
+package blockchain
 
 import (
 	"log"
 	"sync"
 	"time"
 
-	"KNIRVCHAIN-MAIN/block"
-	"KNIRVCHAIN-MAIN/blockchain"
 	"KNIRVCHAIN-MAIN/constants"
 	"KNIRVCHAIN-MAIN/events"
 	"KNIRVCHAIN-MAIN/peerManager"
@@ -15,12 +13,12 @@ import (
 
 // ConsensusManager manages the blockchain consensus.
 type ConsensusManager struct {
-	Blockchain  *blockchain.BlockchainStruct // Direct pointer to the blockchain
-	PeerManager *peerManager.PeerManager     // Direct pointer to the peer manager
+	Blockchain  *BlockchainStruct        // Direct pointer to the blockchain
+	PeerManager *peerManager.PeerManager // Direct pointer to the peer manager
 }
 
 // NewConsensusManager creates a new ConsensusManager.
-func NewConsensusManager(blockchain *blockchain.BlockchainStruct, peerManager *peerManager.PeerManager) *ConsensusManager {
+func NewConsensusManager(blockchain *BlockchainStruct, peerManager *peerManager.PeerManager) *ConsensusManager {
 	return &ConsensusManager{
 		Blockchain:  blockchain,
 		PeerManager: peerManager,
@@ -78,21 +76,19 @@ func (cm *ConsensusManager) RunConsensus(startMining chan bool) {
 				// Access remotePeerManager.Blocks
 				if len(remotePeerManager.Blocks) > 0 && (len(longestChain) == 0 || remotePeerManager.Blocks[len(remotePeerManager.Blocks)-1].BlockNumber > longestChain[len(longestChain)-1].BlockNumber) {
 					if cm.PeerManager.VerifyLastNBlocks(remotePeerManager.Blocks) {
-						longestChain = make([]*block.Block, len(remotePeerManager.Blocks))
+						longestChain = make([]*Block, len(remotePeerManager.Blocks))
 						for i, rb := range remotePeerManager.Blocks {
-							block := &block.Block{
-								BlockNumber:  rb.BlockNumber,
-								Nonce:        rb.Nonce,
-								PrevHash:     rb.PrevHash,
-								Timestamp:    rb.Timestamp,
-								Transactions: rb.Transactions,
+							block := &Block{
+								BlockNumber: rb.BlockNumber,
+								Nonce:       rb.Nonce,
+								PrevHash:    rb.PrevHash,
+								Timestamp:   rb.Timestamp,
 							}
 							longestChain[i] = block
 
 						}
 
 						longestChainIsOurs = false
-						defer func() { cm.Blockchain.MiningLocked = false }() // Unlock after updating
 					} else {
 						log.Println("Chain verification failed from peer:", peer)
 					}
@@ -106,9 +102,9 @@ func (cm *ConsensusManager) RunConsensus(startMining chan bool) {
 			cm.Blockchain.Mutex.Lock()
 			defer cm.Blockchain.Mutex.Unlock()
 			//Deep Copy
-			newBlocks := make([]*block.Block, len(longestChain))
+			newBlocks := make([]*Block, len(longestChain))
 			for i, b := range longestChain {
-				newBlocks[i] = &block.Block{ // Copy individual fields (or implement a DeepCopy method for Block)
+				newBlocks[i] = &Block{ // Copy individual fields (or implement a DeepCopy method for Block)
 					BlockNumber:  b.BlockNumber,
 					Nonce:        b.Nonce,
 					PrevHash:     b.PrevHash,
@@ -116,33 +112,29 @@ func (cm *ConsensusManager) RunConsensus(startMining chan bool) {
 					Transactions: b.Transactions,
 				}
 			}
+
 			cm.Blockchain.Blocks = newBlocks
 			cm.Blockchain.MiningLocked = true
-			defer func() { cm.Blockchain.MiningLocked = false }()
+			startMining <- true
 
-			startMining <- true                        // signal to start mining.
-			err := blockchain.PutIntoDb(cm.Blockchain) // Save to DB after successful update
+			err := PutIntoDb(cm.Blockchain) // Save to DB after successful update
 			if err != nil {
 				log.Printf("Failed to save updated blockchain to DB: %s", err) // Log and continue, consensus will retry
 			} else {
 				log.Println("Updated our blockchain to the longest chain")
-				for _, b := range cm.Blockchain.Blocks {
-					for _, txn := range b.Transactions {
-						cm.PeerManager.Broadcaster.BroadcastTransaction(txn, cm.PeerManager.Address)
+				//for _, b := range cm.Blockchain.Blocks {
+				//for _, txn := range b.Transactions {
+				//cm.PeerManager.Broadcaster.BroadcastTransaction(txn, cm.PeerManager.Address)
 
-					}
-				}
+				//	}
 			}
-
-			// After updating blockchain and before sending a block added event.
-
-		} else {
-			log.Println("Our chain is the longest chain")
-
 		}
 
-		time.Sleep(constants.CONSENSUS_PAUSE_TIME * time.Second)
+		// After updating blockchain and before sending a block added event.
+		cm.Blockchain.MiningLocked = false
+	} // else {
+	// log.Println("Our chain is the longest chain")
+	// }
 
-	}
-
+	time.Sleep(constants.CONSENSUS_PAUSE_TIME * time.Second)
 }

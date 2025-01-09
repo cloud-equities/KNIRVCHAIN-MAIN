@@ -7,29 +7,29 @@ import (
 	"sync"
 	"time"
 
-	"KNIRVCHAIN-MAIN/block"
 	"KNIRVCHAIN-MAIN/constants"
 	"KNIRVCHAIN-MAIN/events"
 	"KNIRVCHAIN-MAIN/peerManager"
 	"KNIRVCHAIN-MAIN/transaction"
+	"KNIRVCHAIN-MAIN/transactionBroadcaster"
 )
 
 type BlockchainStruct struct {
-	TransactionPool  []*transaction.Transaction         `json:"transaction_pool"`
-	Blocks           []*block.Block                     `json:"block_chain"`
-	Address          string                             `json:"address"`
-	Peers            map[string]bool                    `json:"peers"`
-	MiningLocked     bool                               `json:"mining_locked"`
-	Broadcaster      transaction.TransactionBroadcaster `json:"-"`
-	BlockAdded       chan events.BlockAddedEvent        `json:"-"`
-	TransactionAdded chan events.TransactionAddedEvent  `json:"-"`
-	PeerManager      *peerManager.PeerManager           `json:"-"`
-	Mutex            sync.Mutex                         `json:"-"`
+	TransactionPool  []*Transaction                                `json:"transaction_pool"`
+	Blocks           []*Block                                      `json:"block_chain"`
+	Address          string                                        `json:"address"`
+	Peers            map[string]bool                               `json:"peers"`
+	MiningLocked     bool                                          `json:"mining_locked"`
+	Broadcaster      transactionBroadcaster.TransactionBroadcaster `json:"-"`
+	BlockAdded       chan events.BlockAddedEvent                   `json:"-"`
+	TransactionAdded chan events.TransactionAddedEvent             `json:"-"`
+	PeerManager      *peerManager.PeerManager                      `json:"-"`
+	Mutex            sync.Mutex                                    `json:"-"`
 }
 
 var mutex sync.Mutex
 
-func NewBlockchain(genesisBlock block.Block, address string, broadcaster transaction.TransactionBroadcaster, peerManager *peerManager.PeerManager) *BlockchainStruct {
+func NewBlockchain(genesisBlock Block, address string, broadcaster transactionBroadcaster.TransactionBroadcaster, peerManager *peerManager.PeerManager) *BlockchainStruct {
 	exists, _ := KeyExists()
 
 	if exists {
@@ -42,8 +42,8 @@ func NewBlockchain(genesisBlock block.Block, address string, broadcaster transac
 		return blockchainStruct
 	} else {
 		blockchainStruct := new(BlockchainStruct)
-		blockchainStruct.TransactionPool = []*transaction.Transaction{}
-		blockchainStruct.Blocks = []*block.Block{}
+		blockchainStruct.TransactionPool = []*Transaction{}
+		blockchainStruct.Blocks = []*Block{}
 		blockchainStruct.Blocks = append(blockchainStruct.Blocks, &genesisBlock)
 		blockchainStruct.Address = address
 		blockchainStruct.Peers = map[string]bool{}
@@ -61,16 +61,15 @@ func NewBlockchain(genesisBlock block.Block, address string, broadcaster transac
 	}
 }
 
-func NewBlockchainFromSync(remoteBlocks []*peerManager.RemoteBlock, address string, broadcaster transaction.TransactionBroadcaster, peerManager *peerManager.PeerManager) *BlockchainStruct {
+func NewBlockchainFromSync(remoteBlocks []*peerManager.RemoteBlock, address string, broadcaster transactionBroadcaster.TransactionBroadcaster, peerManager *peerManager.PeerManager) *BlockchainStruct {
 	// 1. Convert RemoteBlock to Block: Deep copy is essential to avoid modification issues
-	blocks := make([]*block.Block, len(remoteBlocks))
+	blocks := make([]*Block, len(remoteBlocks))
 	for i, rb := range remoteBlocks {
-		block := &block.Block{
-			BlockNumber:  rb.BlockNumber,
-			Nonce:        rb.Nonce,
-			PrevHash:     rb.PrevHash,
-			Timestamp:    rb.Timestamp,
-			Transactions: rb.Transactions,
+		block := &Block{
+			BlockNumber: rb.BlockNumber,
+			Nonce:       rb.Nonce,
+			PrevHash:    rb.PrevHash,
+			Timestamp:   rb.Timestamp,
 		}
 
 		blocks[i] = block
@@ -88,8 +87,8 @@ func NewBlockchainFromSync(remoteBlocks []*peerManager.RemoteBlock, address stri
 	return bc
 }
 
-func (bc *BlockchainStruct) ToJson() string { // Change to pointer receiver
-	nb, err := json.Marshal(bc) //Marshal the current instance instead of a copy
+func (bc *BlockchainStruct) ToJson() string {
+	nb, err := json.Marshal(bc)
 
 	if err != nil {
 		return err.Error()
@@ -98,7 +97,7 @@ func (bc *BlockchainStruct) ToJson() string { // Change to pointer receiver
 	}
 }
 
-func (bc *BlockchainStruct) AddBlock(b *block.Block) {
+func (bc *BlockchainStruct) AddBlock(b *Block) {
 	bc.Mutex.Lock()
 	defer bc.Mutex.Unlock()
 
@@ -108,7 +107,7 @@ func (bc *BlockchainStruct) AddBlock(b *block.Block) {
 	}
 
 	// remove txn from txn pool
-	newTxnPool := []*transaction.Transaction{}
+	newTxnPool := []*Transaction{}
 	for _, txn := range bc.TransactionPool {
 		_, ok := m[txn.Hash()]
 		if !ok {
@@ -125,11 +124,11 @@ func (bc *BlockchainStruct) AddBlock(b *block.Block) {
 	if err != nil {
 		panic(err.Error())
 	}
-	bc.BlockAdded <- events.BlockAddedEvent{Block: b} // Send the event to the event channel
-	log.Printf("Block added: %+v", b)                 // Log only if necessary
+	//bc.BlockAdded <- events.BlockAddedEvent{Block: transaction} // Send the event to the event channel
+	log.Printf("Block added: %+v", b) // Log only if necessary
 }
 
-func (bc *BlockchainStruct) appendTransactionToTheTransactionPool(transaction *transaction.Transaction) {
+func (bc *BlockchainStruct) appendTransactionToTheTransactionPool(transaction *Transaction) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
@@ -142,7 +141,7 @@ func (bc *BlockchainStruct) appendTransactionToTheTransactionPool(transaction *t
 	}
 }
 
-func (bc *BlockchainStruct) AddTransactionToTransactionPool(transaction *transaction.Transaction) {
+func (bc *BlockchainStruct) AddTransactionToTransactionPool(transaction *Transaction) {
 
 	for _, txn := range bc.TransactionPool {
 		if txn.Hash() == transaction.Hash() {
@@ -154,9 +153,9 @@ func (bc *BlockchainStruct) AddTransactionToTransactionPool(transaction *transac
 
 	valid1 := transaction.VerifyTxn()
 
-	valid2 := bc.simulatedBalanceCheck(valid1, transaction)
+	//valid2 := bc.simulatedBalanceCheck(valid1, transaction)
 
-	if valid1 && valid2 {
+	if valid1 {
 		transaction.Status = constants.TXN_VERIFICATION_SUCCESS
 	} else {
 		transaction.Status = constants.TXN_VERIFICATION_FAILURE
@@ -169,12 +168,12 @@ func (bc *BlockchainStruct) AddTransactionToTransactionPool(transaction *transac
 	bc.BroadcastLocalTransaction(transaction)
 
 }
-func (bc *BlockchainStruct) BroadcastLocalTransaction(txn *transaction.Transaction) {
-	bc.Broadcaster.BroadcastTransaction(txn, bc.Address)
+func (bc *BlockchainStruct) BroadcastLocalTransaction(txn *Transaction) {
+	//bc.Broadcaster.BroadcastTransaction(txn, bc.Address)
 
 	// Log only if needed:
-	log.Println("Broadcasting Transaction", txn)                          // Use the interface
-	bc.TransactionAdded <- events.TransactionAddedEvent{Transaction: txn} // Send the event to the event channel
+	log.Println("Broadcasting Transaction", txn) // Use the interface
+	//bc.TransactionAdded <- events.TransactionAddedEvent{Transaction: txn} // Send the event to the event channel
 }
 
 func (bc *BlockchainStruct) simulatedBalanceCheck(valid1 bool, transaction *transaction.Transaction) bool {
@@ -192,18 +191,18 @@ func (bc *BlockchainStruct) simulatedBalanceCheck(valid1 bool, transaction *tran
 	return balance >= transaction.Value
 }
 
-func (bc *BlockchainStruct) MineNewBlock(minersAddress string) (*block.Block, error) {
+func (bc *BlockchainStruct) MineNewBlock(minersAddress string) (*Block, error) {
 	bc.MiningLocked = true // Lock mining during block creation
 
 	defer func() { bc.MiningLocked = false }() // Unlock *always*, even if error
 
 	prevHash := bc.Blocks[len(bc.Blocks)-1].Hash()
-	newBlock := block.NewBlock(prevHash, 0, uint64(len(bc.Blocks))) // nonce starts at 0
+	newBlock := NewBlock(prevHash, 0, uint64(len(bc.Blocks))) // nonce starts at 0
 
 	// Deep copy transactions from the pool
 	for _, txn := range bc.TransactionPool {
-		newTxn := transaction.NewTransaction(txn.From, txn.To, txn.Value, txn.Data)
-		newTxn.Timestamp = txn.Timestamp // Ensure timestamp is copied
+		newTxn := NewTransaction(txn.From, txn.To, txn.Value, txn.Data)
+		newTxn.Timestamp = txn.Timestamp
 		newTxn.Status = txn.Status
 		newTxn.Signature = txn.Signature
 		newTxn.PublicKey = txn.PublicKey // Ensure public key is copied
@@ -213,7 +212,7 @@ func (bc *BlockchainStruct) MineNewBlock(minersAddress string) (*block.Block, er
 
 	}
 
-	rewardTxn := transaction.NewTransaction(constants.BLOCKCHAIN_ADDRESS, minersAddress, constants.MINING_REWARD, []byte{})
+	rewardTxn := NewTransaction(constants.BLOCKCHAIN_ADDRESS, minersAddress, constants.MINING_REWARD, []byte{})
 	rewardTxn.Status = constants.SUCCESS
 	if err := newBlock.AddTransactionToTheBlock(rewardTxn); err != nil {
 		return nil, fmt.Errorf("failed to add reward transaction: %w", err)
@@ -278,15 +277,15 @@ func (bc *BlockchainStruct) CalculateTotalCrypto(address string) uint64 {
 	return sum
 }
 
-func (bc *BlockchainStruct) GetAllTxns() []transaction.Transaction {
+func (bc *BlockchainStruct) GetAllTxns() []Transaction {
 
-	nTxns := []transaction.Transaction{}
+	nTxns := []Transaction{}
 
 	for i := len(bc.TransactionPool) - 1; i >= 0; i-- {
 		nTxns = append(nTxns, *bc.TransactionPool[i])
 	}
 
-	txns := []transaction.Transaction{}
+	txns := []Transaction{}
 
 	for _, blocks := range bc.Blocks {
 		for _, txn := range blocks.Transactions {
@@ -301,22 +300,19 @@ func (bc *BlockchainStruct) GetAllTxns() []transaction.Transaction {
 
 	return nTxns
 }
-func (bc *BlockchainStruct) AddTransaction(txn transaction.Transaction) error {
-
+func (bc *BlockchainStruct) AddTransaction(txn Transaction) error {
+	bc.Mutex.Lock()
+	defer bc.Mutex.Unlock()
 	if bc.MiningLocked {
-		return fmt.Errorf("mining is locked, cannot add transaction") // Useful error message
-
+		return fmt.Errorf("mining is locked, cannot add transaction")
 	}
 
 	if !txn.VerifyTxn() {
 		return fmt.Errorf("txn verification failed")
 	}
 
-	bc.Mutex.Lock()
-	defer bc.Mutex.Unlock()
-
 	bc.TransactionPool = append(bc.TransactionPool, &txn)
-	bc.TransactionAdded <- events.TransactionAddedEvent{Transaction: &txn} // Send event *after* adding to pool
+	//bc.TransactionAdded <- events.TransactionAddedEvent{Transaction: &txn} // Send event *after* adding to pool
 	return nil
 
 }

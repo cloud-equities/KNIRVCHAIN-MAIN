@@ -1,7 +1,9 @@
+// test_helper.go
 package main
 
 import (
 	"fmt"
+	"log"
 	"net/http/httptest"
 	"os/exec"
 	"strconv"
@@ -17,10 +19,14 @@ func StartTestNode(port int, minerAddress string, remoteNode string) (*exec.Cmd,
 		cmd.Args = append(cmd.Args, "--remote_node", remoteNode)
 	}
 
+	log.Printf("Starting test node at port: %v with minerAddress: %v and remoteNode: %v", port, minerAddress, remoteNode)
+
 	err := cmd.Start()
 	if err != nil {
 		return nil, fmt.Errorf("failed to start test node: %w", err)
 	}
+
+	log.Println("Test node started with pid", cmd.Process.Pid)
 	return cmd, nil
 }
 

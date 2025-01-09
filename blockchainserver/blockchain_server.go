@@ -10,7 +10,7 @@ import (
 
 	"KNIRVCHAIN-MAIN/blockchain"
 	"KNIRVCHAIN-MAIN/constants"
-	"KNIRVCHAIN-MAIN/transaction"
+	
 )
 
 type BlockchainServer struct {
@@ -25,16 +25,16 @@ func NewBlockchainServer(port uint64, blockchainPtr *blockchain.BlockchainStruct
 	bcs.Port = port
 	bcs.BlockchainPtr = blockchainPtr
 	bcs.Server = &http.Server{Addr: fmt.Sprintf(":%d", bcs.Port)}
-
 	return bcs
 }
 
-func (bcs *BlockchainServer) GetBlockchain(w http.ResponseWriter, req *http.Request) {
+func (bcs *BlockchainServer) GetBlockchain(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	if req.Method == http.MethodGet {
-		blocks := bcs.BlockchainPtr.Blocks
+	if r.Method == http.MethodGet {
+		blockchain := bcs.BlockchainPtr
+
 		w.WriteHeader(http.StatusOK)
-		if err := json.NewEncoder(w).Encode(blocks); err != nil {
+		if err := json.NewEncoder(w).Encode(blockchain); err != nil {
 			http.Error(w, "Failed to marshal blocks to json", http.StatusInternalServerError)
 			return
 		}
@@ -44,10 +44,10 @@ func (bcs *BlockchainServer) GetBlockchain(w http.ResponseWriter, req *http.Requ
 	}
 }
 
-func (bcs *BlockchainServer) GetBalance(w http.ResponseWriter, req *http.Request) {
+func (bcs *BlockchainServer) GetBalance(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	if req.Method == http.MethodGet {
-		addr := req.URL.Query().Get("address")
+	if r.Method == http.MethodGet {
+		addr := r.URL.Query().Get("address")
 		x := struct {
 			Balance uint64 `json:"balance"`
 		}{
@@ -66,9 +66,9 @@ func (bcs *BlockchainServer) GetBalance(w http.ResponseWriter, req *http.Request
 	}
 }
 
-func (bcs *BlockchainServer) GetAllNonRewardedTxns(w http.ResponseWriter, req *http.Request) {
+func (bcs *BlockchainServer) GetAllNonRewardedTxns(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	if req.Method == http.MethodGet {
+	if r.Method == http.MethodGet {
 		txnList := bcs.BlockchainPtr.GetAllTxns()
 		byteSlice, err := json.Marshal(txnList)
 		if err != nil {
@@ -96,12 +96,12 @@ func (bcs *BlockchainServer) handleGetTransactions(w http.ResponseWriter, r *htt
 func (bcs *BlockchainServer) SendTxnToTheBlockchain(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if req.Method == http.MethodPost {
-		var txn transaction.Transaction
-
+		var txn := new(Transaction)
 		if err := json.NewDecoder(req.Body).Decode(&txn); err != nil {
 			http.Error(w, "Invalid transaction format", http.StatusBadRequest)
 			return
 		}
+
 		//Verify Transaction
 		if !txn.VerifyTxn() {
 			http.Error(w, "Invalid Txn Signature", http.StatusBadRequest)
@@ -113,12 +113,13 @@ func (bcs *BlockchainServer) SendTxnToTheBlockchain(w http.ResponseWriter, req *
 			log.Printf("Failed to add transaction: %v", err)
 			return
 		}
+		log.Println("Transaction successfully added to the pool with hash: ", txn.Hash())
+
 		w.WriteHeader(http.StatusCreated)
 		if err := json.NewEncoder(w).Encode(txn); err != nil {
-			http.Error(w, "Failed to encode txn", http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf("Failed to marshal transaction: %v", err), http.StatusInternalServerError)
 			return
 		}
-
 	} else {
 		http.Error(w, "Only POST requests are allowed", http.StatusMethodNotAllowed)
 	}

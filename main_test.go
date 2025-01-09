@@ -43,13 +43,13 @@ func (bcs *MockBlockchainServer) ServeHTTP(w http.ResponseWriter, r *http.Reques
 	switch r.URL.Path {
 	case "/blocks":
 		if r.Method == http.MethodGet {
-			bcs.handleGetBlocks(w, r)
+			bcs.handleGetBlocks(w)
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	case "/transactions":
 		if r.Method == http.MethodGet {
-			bcs.handleGetTransactions(w, r)
+			bcs.handleGetTransactions(w)
 		} else if r.Method == http.MethodPost {
 			bcs.handlePostTransaction(w, r)
 		} else {
@@ -59,7 +59,7 @@ func (bcs *MockBlockchainServer) ServeHTTP(w http.ResponseWriter, r *http.Reques
 		if r.Method == http.MethodPost {
 			bcs.handlePostPeer(w, r)
 		} else if r.Method == http.MethodGet {
-			bcs.handleGetPeers(w, r)
+			bcs.handleGetPeers(w)
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -87,24 +87,23 @@ func (bcs *MockBlockchainServer) handlePostPeer(w http.ResponseWriter, r *http.R
 	json.NewEncoder(w).Encode(peer)
 }
 
-func (bcs *MockBlockchainServer) handleGetPeers(w http.ResponseWriter, r *http.Request) {
+func (bcs *MockBlockchainServer) handleGetPeers(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(bcs.BlockchainPtr.Peers)
 }
 
-func (bcs *MockBlockchainServer) handleGetBlocks(w http.ResponseWriter, r *http.Request) {
+func (bcs *MockBlockchainServer) handleGetBlocks(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
-	blocks := bcs.BlockchainPtr.Blocks
+	blockchain := bcs.BlockchainPtr
 	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(blocks); err != nil {
+	if err := json.NewEncoder(w).Encode(blockchain); err != nil {
 		http.Error(w, "Failed to marshal blocks to json", http.StatusInternalServerError)
 		return
 	}
-
 }
 
-func (bcs *MockBlockchainServer) handleGetTransactions(w http.ResponseWriter, r *http.Request) {
+func (bcs *MockBlockchainServer) handleGetTransactions(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	var transactions = bcs.BlockchainPtr.TransactionPool
 	w.WriteHeader(http.StatusOK)
@@ -200,7 +199,14 @@ func Test_ChainSubcommand(t *testing.T) {
 	// Fetch Blocks
 	url := fmt.Sprintf("http://127.0.0.1:%d/blocks", cfg.Port)
 
-	var blocks []*block.Block
+	var debugBlocks []*struct {
+		BlockNumber  uint64                     `json:"block_number"`
+		PrevHash     string                     `json:"prevHash"`
+		Timestamp    int64                      `json:"timestamp"`
+		Nonce        int                        `json:"nonce"`
+		Transactions []*transaction.Transaction `json:"transactions"`
+	}
+
 	// Retry logic to handle eventual consistency
 	for i := 0; i < 5; i++ { // Retry up to 5 times
 		resp, err := http.Get(url)
@@ -214,7 +220,7 @@ func Test_ChainSubcommand(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to read response body: %v", err)
 			}
-			err = json.Unmarshal(body, &blocks)
+			err = json.Unmarshal(body, &debugBlocks)
 
 			if err == nil {
 				break // Exit retry loop if unmarshal successful
@@ -230,10 +236,25 @@ func Test_ChainSubcommand(t *testing.T) {
 		}
 
 	}
-	if len(blocks) == 0 {
+	if len(debugBlocks) == 0 {
 		t.Fatalf("Test failed, unable to retrieve blocks")
 	}
-	// Rest of test logic
+
+	if len(debugBlocks) <= 1 {
+		t.Error("Expected more blocks to be mined, but there isn't")
+	}
+	blocks := []*block.Block{}
+	for _, b := range debugBlocks {
+		converted := &block.Block{
+			BlockNumber:  b.BlockNumber,
+			PrevHash:     b.PrevHash,
+			Timestamp:    b.Timestamp,
+			Nonce:        b.Nonce,
+			Transactions: b.Transactions,
+		}
+		blocks = append(blocks, converted)
+	}
+
 	if len(blocks) <= 1 {
 		t.Error("Expected more blocks to be mined, but there isn't")
 	}
@@ -299,11 +320,10 @@ func Test_WalletSubcommand(t *testing.T) {
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			t.Fatalf("Failed to read response body: %v", err)
+			t.Fatalf("Failed to read the response body: %v", err)
 		}
 		if resp.StatusCode == http.StatusOK {
-			t.Logf("Attempt %d: Status code: %v, body: %s", i+1, resp.StatusCode, body)
-
+			t.Logf("Attempt %d: Status code: %v, body: %s", i+1, resp.StatusCode, string(body))
 			err = json.Unmarshal(body, &transactions)
 			if err == nil {
 				if len(transactions) >= 1 { //Check that at least one transaction is present.
@@ -317,9 +337,7 @@ func Test_WalletSubcommand(t *testing.T) {
 			} else {
 				t.Logf("Attempt %d: Failed to unmarshal transactions: %v. Retrying...", i+1, err)
 				time.Sleep(time.Second)
-
 			}
-
 		} else {
 			t.Logf("Attempt %d: Expected status OK but got %v, body: %s. Retrying...", i+1, resp.StatusCode, string(body))
 			time.Sleep(time.Second)
@@ -350,10 +368,11 @@ func Test_PeerSync(t *testing.T) {
 			cmd1.Wait()
 		}
 	}()
-
 	//Start Node 2
-	ts2Port := int(cfg.Port) + 2 // Define port for the second node (Use a different port like 5002)
+	ts2Port := int(cfg.Port) + 1 // Define port for the second node (Use a different port like 5002)
+	log.Println("Attempting to start second node in peersync test")
 	ts2, err := StartTestNode(ts2Port, "0x456", fmt.Sprintf("http://127.0.0.1:%d", cfg.Port))
+
 	if err != nil {
 		t.Fatalf("Failed to start test node 2: %v", err)
 		if ts2 != nil && ts2.Process != nil {
@@ -362,6 +381,8 @@ func Test_PeerSync(t *testing.T) {
 		}
 		return
 	}
+	log.Println("Second node started correctly in peersync test")
+
 	defer func() {
 		if ts2 != nil && ts2.Process != nil {
 			ts2.Process.Kill()
@@ -369,12 +390,18 @@ func Test_PeerSync(t *testing.T) {
 		}
 	}()
 
-	time.Sleep(10 * time.Second)
+	time.Sleep(15 * time.Second)
 
 	// Fetch blocks from Node 1
 	url1 := fmt.Sprintf("http://127.0.0.1:%d/blocks", cfg.Port)
 
-	var blocks1 []*block.Block
+	var blocks1 []*struct {
+		BlockNumber  uint64                     `json:"block_number"`
+		PrevHash     string                     `json:"prevHash"`
+		Timestamp    int64                      `json:"timestamp"`
+		Nonce        int                        `json:"nonce"`
+		Transactions []*transaction.Transaction `json:"transactions"`
+	}
 	// Retry logic for node 1
 	for i := 0; i < 5; i++ {
 		resp1, err := http.Get(url1)
@@ -393,7 +420,6 @@ func Test_PeerSync(t *testing.T) {
 			} else {
 				t.Logf("Attempt %d: Failed to unmarshal blocks from node 1: %v. Retrying...", i+1, err)
 				time.Sleep(time.Second)
-
 			}
 		} else {
 			t.Logf("Attempt %d: Expected status OK from node 1 but got: %v. Retrying...", i+1, resp1.StatusCode)
@@ -403,10 +429,17 @@ func Test_PeerSync(t *testing.T) {
 	if len(blocks1) == 0 {
 		t.Fatalf("Test failed, unable to retrieve blocks from node 1")
 	}
-
 	// Fetch blocks from Node 2
 	url2 := fmt.Sprintf("http://127.0.0.1:%d/blocks", ts2Port)
-	var blocks2 []*block.Block
+
+	var blocks2 []*struct {
+		BlockNumber  uint64                     `json:"block_number"`
+		PrevHash     string                     `json:"prevHash"`
+		Timestamp    int64                      `json:"timestamp"`
+		Nonce        int                        `json:"nonce"`
+		Transactions []*transaction.Transaction `json:"transactions"`
+	}
+
 	// Retry logic for node 2
 	for i := 0; i < 5; i++ {
 		resp2, err := http.Get(url2)
@@ -414,7 +447,6 @@ func Test_PeerSync(t *testing.T) {
 			t.Fatalf("Failed to fetch blocks from node 2: %v", err)
 		}
 		defer resp2.Body.Close()
-
 		if resp2.StatusCode == http.StatusOK {
 			body2, err := io.ReadAll(resp2.Body)
 			if err != nil {
@@ -436,10 +468,34 @@ func Test_PeerSync(t *testing.T) {
 		t.Fatalf("Test failed, unable to retrieve blocks from node 2")
 	}
 
+	blocks1Converted := []*block.Block{}
+	for _, b := range blocks1 {
+		converted := &block.Block{
+			BlockNumber:  b.BlockNumber,
+			PrevHash:     b.PrevHash,
+			Timestamp:    b.Timestamp,
+			Nonce:        b.Nonce,
+			Transactions: b.Transactions,
+		}
+		blocks1Converted = append(blocks1Converted, converted)
+
+	}
+	blocks2Converted := []*block.Block{}
+	for _, b := range blocks2 {
+		converted := &block.Block{
+			BlockNumber:  b.BlockNumber,
+			PrevHash:     b.PrevHash,
+			Timestamp:    b.Timestamp,
+			Nonce:        b.Nonce,
+			Transactions: b.Transactions,
+		}
+		blocks2Converted = append(blocks2Converted, converted)
+	}
+
 	if len(blocks1) != len(blocks2) {
 		t.Fatalf("Expected the nodes to be sync but got node 1 blocks: %v and node 2 blocks: %v", len(blocks1), len(blocks2))
 	}
-	if !utils.CompareBlocks(blocks1, blocks2) {
+	if !utils.CompareBlocks(blocks1Converted, blocks2Converted) {
 		t.Fatalf("Expected the blocks to be the same but they are not")
 	}
 }

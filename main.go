@@ -207,11 +207,11 @@ func main() {
 			}()
 
 		} else {
-			genesisBlock := block.NewBlock("0x0", 0, 0)
+			//genesisBlock := block.NewBlock("0x0", 0, 0)
 			pm.Address = "http://127.0.0.1:" + strconv.Itoa(int(*chainPort))
 			pm.Broadcaster = peerManager.PeerTransactionBroadcaster{PeerManager: pm}
 
-			blockchain1 = blockchain.NewBlockchain(*genesisBlock, pm.Address, &pm.Broadcaster, pm)
+			//blockchain1 = blockchain.NewBlockchain(*genesisBlock, pm.Address, &pm.Broadcaster, pm)
 
 			// if *remoteNode != ""
 			remotePeerManager, err := peerManager.SyncBlockchain(*remoteNode)
