@@ -1,27 +1,31 @@
 package blockchain
 
 import (
+	"KNIRVCHAIN-MAIN/block"
+	"KNIRVCHAIN-MAIN/constants"
+	"KNIRVCHAIN-MAIN/events"
 	"encoding/json"
 	"log"
 	"strings"
 	"sync"
 
-	"KNIRVCHAIN-MAIN/constants"
 	"KNIRVCHAIN-MAIN/transaction"
 )
 
 type BlockchainStruct struct {
-	TransactionPool []*transaction.Transaction         `json:"transaction_pool"`
-	Blocks          []*Block                           `json:"block_chain"`
-	Address         string                             `json:"address"`
-	Peers           map[string]bool                    `json:"peers"`
-	MiningLocked    bool                               `json:"mining_locked"`
-	Broadcaster     transaction.TransactionBroadcaster `json:"-"`
+	TransactionPool  []*transaction.Transaction         `json:"transaction_pool"`
+	Blocks           []*block.Block                     `json:"block_chain"`
+	Address          string                             `json:"address"`
+	Peers            map[string]bool                    `json:"peers"`
+	MiningLocked     bool                               `json:"mining_locked"`
+	Broadcaster      transaction.TransactionBroadcaster `json:"-"`
+	BlockAdded       chan events.BlockAddedEvent
+	TransactionAdded chan events.TransactionAddedEvent
 }
 
 var mutex sync.Mutex
 
-func NewBlockchain(genesisBlock Block, address string, broadcaster transaction.TransactionBroadcaster) *BlockchainStruct {
+func NewBlockchain(genesisBlock block.Block, address string, broadcaster transaction.TransactionBroadcaster) *BlockchainStruct {
 	exists, _ := KeyExists()
 
 	if exists {
@@ -35,11 +39,14 @@ func NewBlockchain(genesisBlock Block, address string, broadcaster transaction.T
 	} else {
 		blockchainStruct := new(BlockchainStruct)
 		blockchainStruct.TransactionPool = []*transaction.Transaction{}
-		blockchainStruct.Blocks = []*Block{}
+		blockchainStruct.Blocks = []*block.Block{}
 		blockchainStruct.Blocks = append(blockchainStruct.Blocks, &genesisBlock)
 		blockchainStruct.Address = address
 		blockchainStruct.Peers = map[string]bool{}
 		blockchainStruct.MiningLocked = false
+		blockchainStruct.BlockAdded = make(chan events.BlockAddedEvent)
+		blockchainStruct.TransactionAdded = make(chan events.TransactionAddedEvent)
+		blockchainStruct.Broadcaster = broadcaster
 		err := PutIntoDb(*blockchainStruct)
 		if err != nil {
 			panic(err.Error())
@@ -71,7 +78,7 @@ func (bc BlockchainStruct) ToJson() string {
 	}
 }
 
-func (bc *BlockchainStruct) AddBlock(b *Block) {
+func (bc *BlockchainStruct) AddBlock(b *block.Block) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
@@ -97,6 +104,7 @@ func (bc *BlockchainStruct) AddBlock(b *Block) {
 	if err != nil {
 		panic(err.Error())
 	}
+	bc.BlockAdded <- events.BlockAddedEvent{Block: b} // Send the event to the event channel
 }
 
 func (bc *BlockchainStruct) appendTransactionToTheTransactionPool(transaction *transaction.Transaction) {
@@ -127,13 +135,11 @@ func (bc *BlockchainStruct) AddTransactionToTransactionPool(transaction *transac
 		TransactionHash: transaction.TransactionHash,
 		From:            transaction.From,
 		To:              transaction.To,
-		Value:           transaction.Value,
-		Data:            transaction.Data,
-		Status:          transaction.Status,
+		Amount:          transaction.Data,
 		Timestamp:       transaction.Timestamp,
+		Status:          transaction.Status,
 		PublicKey:       transaction.PublicKey,
 		Signature:       transaction.Signature,
-		TransactionPool: transaction.TransactionPool,
 	}
 
 	valid1 := transaction.VerifyTxn()
@@ -153,9 +159,11 @@ func (bc *BlockchainStruct) AddTransactionToTransactionPool(transaction *transac
 	newTxn.PublicKey = ""
 
 	bc.BroadcastLocalTransaction(newTxn)
+
 }
 func (bc *BlockchainStruct) BroadcastLocalTransaction(txn *transaction.Transaction) {
-	bc.Broadcaster.BroadcastTransaction(txn, bc.Address) // Use the interface
+	bc.Broadcaster.BroadcastTransaction(txn, bc.Address)                  // Use the interface
+	bc.TransactionAdded <- events.TransactionAddedEvent{Transaction: txn} // Send the event to the event channel
 }
 
 func (bc *BlockchainStruct) simulatedBalanceCheck(valid1 bool, transaction *transaction.Transaction) bool {
@@ -190,7 +198,7 @@ func (bc *BlockchainStruct) ProofOfWorkMining(minersAddress string) {
 
 		// start with a nonce
 		// create a new block
-		guessBlock := NewBlock(prevHash, nonce, uint64(len(bc.Blocks)))
+		guessBlock := block.NewBlock(prevHash, nonce, uint64(len(bc.Blocks)))
 
 		if bc.MiningLocked {
 			continue

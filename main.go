@@ -11,6 +11,7 @@ import (
 
 	"github.com/joho/godotenv"
 
+	"KNIRVCHAIN-MAIN/block"
 	"KNIRVCHAIN-MAIN/blockchain"
 	"KNIRVCHAIN-MAIN/blockchainserver"
 	"KNIRVCHAIN-MAIN/constants"
@@ -148,20 +149,24 @@ func main() {
 
 			if *remoteNode == "" {
 
-				genesisBlock := blockchain.NewBlock("0x0", 0, 0)
-				pm := peermanager.NewPeerManager(*chainPort, cfg.PeerBroadcastPauseTime, cfg.PeerPingPauseTime, cfg.TxnBroadcastPauseTime, cfg.FetchLastNBlocks, cfg.ConsensusPauseTime)
+				genesisBlock := block.NewBlock("0x0", 0, 0)
+				pm := peerManager.GetPeerManager()
 				for _, peerAddress := range cfg.PeerAddresses {
 					pm.AddPeer(peerAddress)
 				}
+
 				blockchain1 := blockchain.NewBlockchain(*genesisBlock, "http://127.0.0.1:"+strconv.Itoa(int(*chainPort)), pm)
+
 				blockchain1.Peers[blockchain1.Address] = true
 				bcs := blockchainserver.NewBlockchainServer(*chainPort, blockchain1)
 				wg.Add(4)
 
 				go bcs.Start()
+
+				peerManager.GetPeerManager()
 				go bcs.BlockchainPtr.ProofOfWorkMining(*chainMiner)
-				go pm.BlockchainPtr.DialAndUpdatePeers()
-				go pm.BlockchainPtr.RunConsensus()
+				go pm.DialAndUpdatePeers()
+				go bcs.BlockchainPtr.RunConsensus()
 				wg.Wait()
 			} else {
 				blockchain1, err := peerManager.SyncBlockchain(*remoteNode)
@@ -169,15 +174,15 @@ func main() {
 					fmt.Println(err.Error())
 					os.Exit(1)
 				}
-				pm := peermanager.NewPeerManager(*chainPort, cfg.PeerBroadcastPauseTime, cfg.PeerPingPauseTime, cfg.TxnBroadcastPauseTime, cfg.FetchLastNBlocks, cfg.ConsensusPauseTime)
+				pm := peerManager.GetPeerManager()
 				blockchain2 := blockchain.NewBlockchainFromSync(blockchain1, "http://127.0.0.1:"+strconv.Itoa(int(*chainPort)))
 				blockchain2.Peers[blockchain2.Address] = true
 				bcs := blockchainserver.NewBlockchainServer(*chainPort, blockchain2)
 				wg.Add(4)
 				go bcs.Start()
 				go bcs.BlockchainPtr.ProofOfWorkMining(*chainMiner)
-				go pm.BlockchainPtr.DialAndUpdatePeers()
-				go pm.BlockchainPtr.RunConsensus()
+				go pm.DialAndUpdatePeers()
+				go bcs.BlockchainPtr.RunConsensus()
 				wg.Wait()
 			}
 
