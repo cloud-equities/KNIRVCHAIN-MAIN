@@ -44,6 +44,8 @@ type PeerManager struct {
 	BlockAdded                       chan events.BlockAddedEvent
 	TransactionAdded                 chan events.TransactionAddedEvent
 	PeerTransactionBroadcaster       PeerTransactionBroadcaster
+	PeersMutex                       sync.Mutex // Mutex to protect Peers map
+
 }
 type Peer struct {
 	ID        string `json:"id"`
@@ -70,37 +72,6 @@ type Peers struct {
 type ClientPeer struct {
 	PeerAddress string `json:"address"`
 	ID          string `json:"id"`
-}
-
-var pm *PeerManager
-var once sync.Once
-
-func GetPeerManager(blockAdded <-chan events.BlockAddedEvent, transactionAdded <-chan events.TransactionAddedEvent) *PeerManager {
-	once.Do(func() {
-		pm = &PeerManager{
-			Peers:                        make(map[string]Peer),
-			TransactionPool:              []*transaction.Transaction{},
-			Blocks:                       []*RemoteBlock{},
-			Address:                      "",
-			MiningLocked:                 false,
-			Mutex:                        sync.Mutex{},
-			BlockNumber:                  0,
-			PrevHash:                     "",
-			Timestamp:                    0,
-			Nonce:                        0,
-			BlockAddedSubscription:       blockAdded,
-			TransactionAddedSubscription: transactionAdded,
-		}
-	})
-	return pm
-}
-
-type RemoteBlockchainStruct struct {
-	TransactionPool []*transaction.TransactionPool `json:"transaction_pool"`
-	Blocks          []*RemoteBlock                 `json:"block_chain"`
-	Address         string                         `json:"address"`
-	Peers           map[string]bool                `json:"peers"`
-	MiningLocked    bool                           `json:"mining_locked"`
 }
 
 type RemoteBlock struct {
@@ -214,8 +185,9 @@ func (pm *PeerManager) UpdateTransactionPool(Transactions []*transaction.Transac
 
 }
 func (pm *PeerManager) UpdatePeers(peersList map[string]bool) {
-	pm.Mutex.Lock()
-	defer pm.Mutex.Unlock()
+	pm.PeersMutex.Lock()
+
+	defer pm.PeersMutex.Unlock()
 	for peerID, status := range peersList {
 		if peer, exists := pm.Peers[peerID]; exists {
 			peer.Status = status
@@ -316,6 +288,8 @@ func (pm *PeerManager) BroadcastPeerList() {
 
 func (pm *PeerManager) DialAndUpdatePeers() {
 	for {
+		pm.PeersMutex.Lock() // Lock before accessing pm.Peers
+
 		log.Println("Pinging Peers", pm.Peers)
 		newList := pm.Peers
 
@@ -344,7 +318,7 @@ func (pm *PeerManager) DialAndUpdatePeers() {
 
 		// broadcast our new peers list
 		pm.BroadcastPeerList()
-
+		pm.PeersMutex.Unlock() // Unlock after using pm.Peers
 		time.Sleep(constants.PEER_PING_PAUSE_TIME * time.Second)
 	}
 }
@@ -357,15 +331,15 @@ func (pm *PeerManager) SendTxnToThePeer(address string, txn *transaction.Transac
 	http.Post(ourURL, "application/json", strings.NewReader(data))
 }
 
-func (pm *PeerManager) BroadcastTransaction(txn *transaction.Transaction, excludeAddress string) {
-	for peer, status := range pm.PeerTransactionBroadcaster.PeerManager.Peers { // Access peer list somehow
+func (ptb *PeerTransactionBroadcaster) BroadcastTransaction(txn *transaction.Transaction, excludeAddress string) {
+	ptb.PeerManager.PeersMutex.Lock()         // Lock before accessing Peers
+	defer ptb.PeerManager.PeersMutex.Unlock() // Unlock when done
+	for peer, status := range ptb.PeerManager.Peers {
 		if peer != excludeAddress && status.Status {
-			// ... logic for sending the transaction (like your current SendTxnToThePeer)
-			log.Println("Broadcasting LocalTransaction to the peer:", peer, "Transaction:", BlockToJson(txn))
 
-			pm.PeerTransactionBroadcaster.PeerManager.SendTxnToThePeer(peer, txn)
+			ptb.PeerManager.SendTxnToThePeer(peer, txn) // Correct:  ptb.PeerManager not pm
+
 			time.Sleep(constants.TXN_BROADCAST_PAUSE_TIME * time.Second)
-
 		}
 	}
 }
@@ -402,20 +376,20 @@ func (rb RemoteBlock) RemoteHash() string {
 
 	return formattedHexRep
 }
-func verifyLastNBlocks(chain []*RemoteBlock) bool {
-	if chain[0].BlockNumber != 0 && chain[0].RemoteHash()[2:2+constants.MINING_DIFFICULTY] != strings.Repeat("0", constants.MINING_DIFFICULTY) {
-		log.Println("Chain verification failed for block", chain[0].BlockNumber, "hash", chain[0].RemoteHash())
+func (pm *PeerManager) VerifyLastNBlocks(blocks []*RemoteBlock) bool {
+	if blocks[0].BlockNumber != 0 && blocks[0].RemoteHash()[2:2+constants.MINING_DIFFICULTY] != strings.Repeat("0", constants.MINING_DIFFICULTY) {
+		log.Println("Chain verification failed for block", blocks[0].BlockNumber, "hash", blocks[0].RemoteHash())
 		return false
 	}
 
-	for i := 1; i < len(chain); i++ {
-		if chain[i-1].RemoteHash() != chain[i].PrevHash {
-			log.Println("Failed to verify prevHash for block number", chain[i].BlockNumber)
+	for i := 1; i < len(blocks); i++ {
+		if blocks[i-1].RemoteHash() != blocks[i].PrevHash {
+			log.Println("Failed to verify prevHash for block number", blocks[i].BlockNumber)
 			return false
 		}
 
-		if chain[i].RemoteHash()[2:2+constants.MINING_DIFFICULTY] != strings.Repeat("0", constants.MINING_DIFFICULTY) {
-			log.Println("Chain verification failed for block", chain[0].BlockNumber, "hash", chain[0].RemoteHash())
+		if blocks[i].RemoteHash()[2:2+constants.MINING_DIFFICULTY] != strings.Repeat("0", constants.MINING_DIFFICULTY) {
+			log.Println("Chain verification failed for block", blocks[0].BlockNumber, "hash", blocks[0].RemoteHash())
 			return false
 		}
 	}

@@ -24,10 +24,13 @@ type Transaction struct {
 	PublicKey       string            `json:"public_key,omitempty"`
 	Signature       []byte            `json:"Signature"`
 	TransactionPool []TransactionPool `json:"transaction_pool"`
+	Blocks          []TransactionPool `json:"blocks"`
+	BlockNumber     uint64            `json:"block_number"`
 }
 
 type TransactionPool struct {
 	Transactions []TransactionsList `json:"transactions"`
+	Blocks       []TransactionPool  `json:"blocks"`
 }
 
 type TransactionsList struct {

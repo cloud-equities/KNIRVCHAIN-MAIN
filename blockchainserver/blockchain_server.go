@@ -9,9 +9,10 @@ import (
 	"strconv"
 
 	"KNIRVCHAIN-MAIN/blockchain"
+	"KNIRVCHAIN-MAIN/consensus"
 	"KNIRVCHAIN-MAIN/constants"
 	"KNIRVCHAIN-MAIN/events"
-	"KNIRVCHAIN-MAIN/peerManager"
+
 	"KNIRVCHAIN-MAIN/transaction"
 )
 
@@ -130,7 +131,7 @@ func (bcs *BlockchainServer) SendPeersList(w http.ResponseWriter, req *http.Requ
 		}
 		blockAddedChan := make(chan events.BlockAddedEvent)
 		transactionAddedChan := make(chan events.TransactionAddedEvent)
-		go peerManager.GetPeerManager(blockAddedChan, transactionAddedChan).UpdatePeers(peersList)
+		go consensus.GetPeerManager(blockAddedChan, transactionAddedChan).UpdatePeers(peersList)
 		res := map[string]string{}
 		res["status"] = "success"
 		x, err := json.Marshal(res)
@@ -144,7 +145,6 @@ func (bcs *BlockchainServer) SendPeersList(w http.ResponseWriter, req *http.Requ
 		http.Error(w, "Invalid Method", http.StatusBadRequest)
 	}
 }
-
 func (bcs *BlockchainServer) FetchLastNBlocks(w http.ResponseWriter, req *http.Request) {
 	w.Header().Add("Content-Type", "application/json")
 	if req.Method == http.MethodGet {

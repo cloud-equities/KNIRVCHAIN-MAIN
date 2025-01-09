@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"KNIRVCHAIN-MAIN/peerManager"
 	"KNIRVCHAIN-MAIN/transaction"
 )
 
@@ -55,17 +56,30 @@ func NewBlockchain(genesisBlock block.Block, address string, broadcaster transac
 	}
 }
 
-func NewBlockchainFromSync(bc1 *BlockchainStruct, address string, broadcaster transaction.TransactionBroadcaster) *BlockchainStruct {
-	bc2 := bc1
-	bc2.Address = address
+func NewBlockchainFromSync(remoteBlocks []*peerManager.RemoteBlock, address string, broadcaster transaction.TransactionBroadcaster) *BlockchainStruct {
+	// 1. Convert RemoteBlock to Block: Deep copy is essential to avoid modification issues
+	blocks := make([]*block.Block, len(remoteBlocks))
+	for i, rb := range remoteBlocks {
+		block := &block.Block{
+			BlockNumber:  rb.BlockNumber,
+			Nonce:        rb.Nonce,
+			PrevHash:     rb.PrevHash,
+			Timestamp:    rb.Timestamp,
+			Transactions: rb.Transactions,
+		}
 
-	bc2.Broadcaster = broadcaster
-	err := PutIntoDb(*bc2)
-	if err != nil {
-		panic(err.Error())
+		blocks[i] = block
 	}
 
-	return bc2
+	bc := &BlockchainStruct{
+		Blocks:       blocks,
+		Address:      address, // Your blockchain node's address
+		Peers:        make(map[string]bool),
+		Broadcaster:  broadcaster, // Your transaction broadcaster
+		MiningLocked: false,       // Add other necessary fields
+
+	}
+	return bc
 }
 
 func (bc BlockchainStruct) ToJson() string {

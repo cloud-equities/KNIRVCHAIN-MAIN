@@ -4,6 +4,7 @@ package events
 import (
 	"KNIRVCHAIN-MAIN/block"
 	"KNIRVCHAIN-MAIN/transaction"
+	"fmt"
 )
 
 // Define event types for blockchain, consensus, peer updates, etc.
@@ -11,10 +12,24 @@ type BlockAddedEvent struct {
 	Block *block.Block // Assuming you have Block defined in blockchain package
 }
 
+func Broadcaster(blockAdded <-chan BlockAddedEvent, transactionAdded <-chan TransactionAddedEvent) {
+	for {
+		select {
+		case event := <-blockAdded:
+			// Handle the block added event
+			fmt.Println("Block added:", event.Block)
+		case event := <-transactionAdded:
+			// Handle the transaction added event
+			fmt.Println("Transaction added:", event.Transaction)
+		}
+	}
+}
+
 type TransactionAddedEvent struct {
-	Transaction            *transaction.Transaction
-	BlockHash              string
-	BlockNumber            uint64
+	Transaction *transaction.Transaction
+	BlockHash   string
+	BlockNumber uint64
+
 	Block                  *block.Block
 	Peer                   string
 	Timestamp              int64
@@ -46,5 +61,3 @@ type TransactionAddedEvent struct {
 	ConsensusPauseTime     int
 	newTxn                 *transaction.Transaction
 }
-
-// Add other events for consensus, peer updates, etc., as needed.

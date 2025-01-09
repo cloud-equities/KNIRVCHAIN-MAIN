@@ -14,7 +14,7 @@ import (
 	"KNIRVCHAIN-MAIN/block"
 	"KNIRVCHAIN-MAIN/blockchain"
 	"KNIRVCHAIN-MAIN/blockchainserver"
-	consensus "KNIRVCHAIN-MAIN/consensusmanager/consensus_manager"
+	"KNIRVCHAIN-MAIN/consensus"
 	"KNIRVCHAIN-MAIN/constants"
 	"KNIRVCHAIN-MAIN/events"
 	"KNIRVCHAIN-MAIN/peerManager"
@@ -154,42 +154,56 @@ func main() {
 				genesisBlock := block.NewBlock("0x0", 0, 0)
 				blockAddedChan := make(chan events.BlockAddedEvent)
 				transactionAddedChan := make(chan events.TransactionAddedEvent)
-				pm := peerManager.GetPeerManager(blockAddedChan, transactionAddedChan)
-				for _, peerAddress := range cfg.PeerAddresses {
-					pm.AddPeer(peerManager.Peer{Address: peerAddress})
+				pm := consensus.GetPeerManager(blockAddedChan, transactionAddedChan)
+
+				// Initialize the PeerManager with the blockchain address:
+				pm.Address = "http://127.0.0.1:" + strconv.Itoa(int(*chainPort)) // Assign the address
+				for _, peerAddress := range cfg.PeerAddresses {                  // Fix assignment using map
+					pm.Peers[peerAddress] = peerManager.Peer{Address: peerAddress, Status: true}
+					log.Println("Added Peer:", peerAddress)
 				}
 
-				blockchain1 := blockchain.NewBlockchain(*genesisBlock, "http://127.0.0.1:"+strconv.Itoa(int(*chainPort)), pm)
+				pm.Broadcaster = peerManager.PeerTransactionBroadcaster{PeerManager: pm} // Initialize the Broadcaster!!!
+
+				blockchain1 := blockchain.NewBlockchain(*genesisBlock, pm.Address, &pm.Broadcaster) // Address assigned from PeerManager
 
 				blockchain1.Peers[blockchain1.Address] = true
-				bcs := blockchainserver.NewBlockchainServer(*chainPort, blockchain1)
+				bcs := blockchainserver.NewBlockchainServer(*chainPort, blockchain1.BlockchainPtr)
+
+				consensusMgr := consensus.NewConsensusManager(blockchain1, pm)
+				go consensusMgr.RunConsensus()
 				wg.Add(4)
 
 				go bcs.Start()
 
-				peerManager.GetPeerManager(blockAddedChan, transactionAddedChan)
 				go bcs.BlockchainPtr.ProofOfWorkMining(*chainMiner)
+				go pm.StartListening()
 				go pm.DialAndUpdatePeers()
-				go consensus.RunConsensus()
+				go consensusMgr.RunConsensus()
 				wg.Wait()
 			} else {
-				blockchain1, err := peerManager.SyncBlockchain(*remoteNode)
+				remotePeerManager, err := peerManager.SyncBlockchain(*remoteNode)
 				if err != nil {
 					fmt.Println(err.Error())
 					os.Exit(1)
 				}
 				blockAddedChan := make(chan events.BlockAddedEvent)
 				transactionAddedChan := make(chan events.TransactionAddedEvent)
-				pm := peerManager.GetPeerManager(blockAddedChan, transactionAddedChan)
+				pm := consensus.GetPeerManager(blockAddedChan, transactionAddedChan)
+				pm.Broadcaster = peerManager.PeerTransactionBroadcaster{PeerManager: pm} // Initialize the broadcaster
 
-				blockchain2 := blockchain.NewBlockchainFromSync(blockchain1, "http://127.0.0.1:"+strconv.Itoa(int(*chainPort)), &peerManager.PeerManager{})
+				blockchain2 := blockchain.NewBlockchainFromSync(remotePeerManager.Blocks, pm.Address, &pm.Broadcaster)
+
 				blockchain2.Peers[blockchain2.Address] = true
 				bcs := blockchainserver.NewBlockchainServer(*chainPort, blockchain2)
 				wg.Add(4)
 				go bcs.Start()
 				go bcs.BlockchainPtr.ProofOfWorkMining(*chainMiner)
+				go pm.StartListening()
+
 				go pm.DialAndUpdatePeers()
-				go consensus.RunConsensus()
+				consensusMgr := consensus.NewConsensusManager(blockchain2, pm) // Pass both blockchain and peer manager
+				go consensusMgr.RunConsensus()
 				wg.Wait()
 			}
 
