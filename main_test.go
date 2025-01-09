@@ -1,91 +1,440 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"net/http/httptest"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"runtime"
-	"strings"
+	"strconv"
 	"testing"
+	"time"
+
+	"github.com/joho/godotenv"
+
+	"KNIRVCHAIN-MAIN/block"
+	"KNIRVCHAIN-MAIN/blockchain"
+	"KNIRVCHAIN-MAIN/consensus"
+	"KNIRVCHAIN-MAIN/constants"
+	"KNIRVCHAIN-MAIN/events"
+	"KNIRVCHAIN-MAIN/peerManager"
+	"KNIRVCHAIN-MAIN/transaction"
+	"KNIRVCHAIN-MAIN/utils"
+	"KNIRVCHAIN-MAIN/walletserver"
 )
 
-func TestMainChainStartup(t *testing.T) {
-	tempDir := "test_main_chain"
-	defer os.RemoveAll(tempDir)
+func init() {
+	log.SetPrefix(constants.BLOCKCHAIN_NAME + ":")
+}
 
-	dbPath := filepath.Join(tempDir, "knirv.db")
+// MockBlockchainServer to inject blockchain data
+type MockBlockchainServer struct {
+	BlockchainPtr *blockchain.BlockchainStruct
+}
 
-	cmd := exec.Command("go", "run", "main.go", "chain", "-port", "5000", "-miners_address", "testAddress", "-database_path", dbPath)
+func NewMockBlockchainServer(blockchain *blockchain.BlockchainStruct) *MockBlockchainServer {
+	return &MockBlockchainServer{BlockchainPtr: blockchain}
+}
+func (bcs *MockBlockchainServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
-	cmd.Dir = filepath.Join(".")
-
-	if runtime.GOOS == "windows" {
-		cmd = exec.Command("go", "run", ".\\main.go", "chain", "-port", "5000", "-miners_address", "testAddress", "-database_path", dbPath) // specify for both tests the appropriate calls for the CLI executable name depending on platform.
-	}
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("chain did not execute without error: %v %s:", err, output)
-	}
-
-	outputString := string(output)
-	if !strings.Contains(outputString, "Starting the consensus algorithm...") { // correct usage to use data object information and testing of method calls, without declaring or passing parameters through function calls.
-		t.Fatalf("Consensus algorithm message is missing from %v", outputString) // use testing to indicate if code implemented is running.
-
-	}
-	if !strings.Contains(outputString, "Mined block number:") {
-		t.Errorf("Miner method has an output which does not reflect that of code that should return that type during test:\n Output is :%v ", outputString) // type testing can now also occur if you return with logging using known testing parameters from project implementations of types for these test cases when they fail due to some new error types that are then caught at run time of other structs.
-	}
-
-	//Verify chain exits gracefully
-	cmd2 := exec.Command("tasklist")
-	if runtime.GOOS != "windows" { // handle implementation to avoid operating systems from breaking.
-		cmd2 = exec.Command("ps", "-ef") // get system information using different methods when not implemented with a specific test configuration setup, where there may be many different OSs that code might run on for all possible future cases of testing and production use scenarios during the core stages of development as you are attempting to test before final deployment of the code into production (for this testing purpose as an application) as the workflow will be that, you start tests first, and then verify before committing changes.
-	}
-
-	output2, err := cmd2.CombinedOutput()
-	if err != nil {
-		t.Fatalf("error reading list of tasks %v %s:", err, output2)
-	}
-	if strings.Contains(string(output2), ":5000") { // this should never occur for graceful exits as the methods should call an appropriate method that sets it in test before execution ends using methods defined and designed.
-		t.Errorf("process is still running after stop has been initiated, this should return only test output: %v", output2)
+	switch r.URL.Path {
+	case "/blocks":
+		if r.Method == http.MethodGet {
+			bcs.handleGetBlocks(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	case "/transactions":
+		if r.Method == http.MethodGet {
+			bcs.handleGetTransactions(w, r)
+		} else if r.Method == http.MethodPost {
+			bcs.handlePostTransaction(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	case "/peers":
+		if r.Method == http.MethodPost {
+			bcs.handlePostPeer(w, r)
+		} else if r.Method == http.MethodGet {
+			bcs.handleGetPeers(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	default:
+		http.NotFound(w, r)
 	}
 }
 
-func TestMainVaultStartup(t *testing.T) { // create object which holds state and test case information, by creating a local scoped environment object with expected values, for code type, interface or signature declaration verification purposes before making implementation requirements (where errors can occur when mixing scope or passing incorrect data and not having checks) in a specific workflow for type safety and data accessibility or use by multiple application test implementations, of many layers, including external libraries using interfaces with your local project object parameters, before compiling or during method execution as a testing requirement that needs to have passing conditions for that workflow.
-
-	tempDir := "test_vault_path"
-	defer os.RemoveAll(tempDir)
-	dbPath := filepath.Join(tempDir, "knirv.db") // correct testing logic using a combination of method signature with the defined objects type for tests, and code scope control.
-
-	cmd := exec.Command("go", "run", "main.go", "vault", "-port", "8080", "-node_address", "http://127.0.0.1:5000", "-database_path", dbPath)
-	cmd.Dir = filepath.Join(".")
-	if runtime.GOOS == "windows" {
-		cmd = exec.Command("go", "run", ".\\main.go", "vault", "-port", "8080", "-node_address", "http://127.0.0.1:5000", "-database_path", dbPath) // create os specific versions
+func (bcs *MockBlockchainServer) handlePostPeer(w http.ResponseWriter, r *http.Request) {
+	var peer peerManager.Peer
+	if r.Body == nil {
+		http.Error(w, "Please send a request body", http.StatusBadRequest)
+		return
 	}
-
-	output, err := cmd.CombinedOutput()
+	err := json.NewDecoder(r.Body).Decode(&peer)
 	if err != nil {
-		t.Fatalf("failed to start vault with port, and node configuration: %v :%s:", err, string(output))
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
-	outputString := string(output)
+	bcs.BlockchainPtr.Peers[peer.Address] = true
 
-	if !strings.Contains(outputString, "Launching webserver at port") {
-		t.Errorf("Launching webserver output was missing from: %v", outputString) // ensure system response messages conform to an expected output for verification of intended implementation as type checked for these parameters ( using a defined format in code by design choice during implementation stages), of the project requirements.
-	}
-	cmd2 := exec.Command("tasklist") // call a function in os lib to use cross operating system compatible types to check if test resource are also not running at the operating system level, for safety or testing reasons, such as port verification, to make sure there are no zombie threads of processes that have remained active when not intended.
-	if runtime.GOOS != "windows" {   // testing windows for macos, unix/bsd systems using commands that can call that data correctly (you do not have to declare methods that perform all implementation for testing purposes in all files that you will call them). Instead that code must implement only calls with test or type validation data to prove code has followed instructions in scope during testing.
-		cmd2 = exec.Command("ps", "-ef")
-	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(peer)
+}
 
-	output2, err := cmd2.CombinedOutput()
+func (bcs *MockBlockchainServer) handleGetPeers(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(bcs.BlockchainPtr.Peers)
+}
+
+func (bcs *MockBlockchainServer) handleGetBlocks(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json") // Ensure correct Content-Type
+	blocks := bcs.BlockchainPtr.Blocks
+	// Marshal the blocks *directly*
+	blockJSON, err := json.Marshal(blocks)
+
 	if err != nil {
-		t.Fatalf("error reading list of tasks %v %s:", err, output2)
-	}
-	if strings.Contains(string(output2), ":8080") { // testing correct port implementation.
-		t.Errorf("process is still running after stop has been initiated, this should return only test output: %v", output2)
-
+		http.Error(w, "Failed to marshal blocks to json", http.StatusInternalServerError)
+		return
 	}
 
+	w.WriteHeader(http.StatusOK)
+
+	w.Write(blockJSON) // Write the marshaled JSON
+}
+
+func (bcs *MockBlockchainServer) handleGetTransactions(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var transactions = bcs.BlockchainPtr.TransactionPool
+	w.WriteHeader(http.StatusOK)
+	err := json.NewEncoder(w).Encode(transactions)
+	if err != nil {
+		http.Error(w, "Failed to marshal transactions to json", http.StatusInternalServerError)
+		return
+	}
+}
+
+func (bcs *MockBlockchainServer) handlePostTransaction(w http.ResponseWriter, r *http.Request) {
+	var t transaction.Transaction
+
+	if r.Body == nil {
+		http.Error(w, "Please send a request body", http.StatusBadRequest)
+		return
+	}
+
+	err := json.NewDecoder(r.Body).Decode(&t)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	bcs.BlockchainPtr.TransactionAdded <- events.TransactionAddedEvent{Transaction: &t}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(t)
+}
+
+// TestMain serves as entrypoint for the tests
+func TestMain(m *testing.M) {
+	//Load .env.test file
+	err := godotenv.Load("./test.env")
+	if err != nil {
+		log.Fatalf("Error loading .env.test file: %v", err)
+	}
+	os.Exit(m.Run()) //Run tests after loading environment variables
+}
+
+// Helper function to set up the test environment
+func setupTestEnv(t *testing.T) (*Config, *httptest.Server, *consensus.ConsensusManager, *peerManager.PeerManager, chan bool, chan bool, chan bool, chan bool) {
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+	cfg.Port = 5001 //For testing purposes force the port
+	// Set up mock blockchain and server
+	genesisBlock := block.NewBlock("0x0", 0, 0)
+	blockAddedChan := make(chan events.BlockAddedEvent)
+	transactionAddedChan := make(chan events.TransactionAddedEvent)
+	pm := consensus.GetPeerManager(blockAddedChan, transactionAddedChan)
+	pm.Address = "http://127.0.0.1:" + strconv.Itoa(int(cfg.Port))
+	pm.Broadcaster = peerManager.PeerTransactionBroadcaster{PeerManager: pm}
+	bc := blockchain.NewBlockchain(*genesisBlock, pm.Address, &pm.Broadcaster, pm)
+	bc.Peers[bc.Address] = true
+	mockServer := httptest.NewServer(NewMockBlockchainServer(bc))
+
+	consensusMgr := consensus.NewConsensusManager(bc, pm)
+
+	startMining := make(chan bool)
+	startConsensus := make(chan bool)
+	stopMining := make(chan bool)
+	miningStopped := make(chan bool)
+
+	return cfg, mockServer, consensusMgr, pm, startMining, startConsensus, stopMining, miningStopped
+}
+
+// Helper function to tear down the test environment
+func tearDownTestEnv(server *httptest.Server) {
+	server.Close()
+}
+
+func Test_ChainSubcommand(t *testing.T) {
+	// Set up test environment
+	cfg, _, _, _, _, _, _, _ := setupTestEnv(t)
+
+	// Start test node as a separate process
+	cmd, err := StartTestNode(int(cfg.Port), "0x123", "")
+	if err != nil {
+		t.Fatalf("Failed to start test node: %v", err)
+	}
+	defer func() {
+		if cmd != nil && cmd.Process != nil {
+			cmd.Process.Kill()
+			cmd.Wait() // wait for process to terminate
+		}
+	}()
+
+	time.Sleep(7 * time.Second) // Give time to start and mine blocks
+
+	// Fetch Blocks
+	url := fmt.Sprintf("http://127.0.0.1:%d/blocks", cfg.Port)
+
+	var blocks []*block.Block
+	// Retry logic to handle eventual consistency
+	for i := 0; i < 5; i++ { // Retry up to 5 times
+		resp, err := http.Get(url)
+		if err != nil {
+			t.Fatalf("Failed to get blocks: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusOK { // Only unmarshal if status is OK
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatalf("Failed to read response body: %v", err)
+			}
+			err = json.Unmarshal(body, &blocks)
+
+			if err == nil {
+				break // Exit retry loop if unmarshal successful
+			} else {
+				t.Logf("Attempt %d: Failed to unmarshal blocks: %v. Retrying...", i+1, err)
+				time.Sleep(time.Second) // Wait before retrying
+			}
+		} else {
+
+			t.Logf("Attempt %d: Expected status OK but got %v. Retrying...", i+1, resp.StatusCode)
+			time.Sleep(time.Second)
+
+		}
+
+	}
+	if len(blocks) == 0 {
+		t.Fatalf("Test failed, unable to retrieve blocks")
+	}
+	// Rest of test logic
+	if len(blocks) <= 1 {
+		t.Error("Expected more blocks to be mined, but there isn't")
+	}
+
+}
+
+func Test_WalletSubcommand(t *testing.T) {
+	// Set up test environment
+	cfg, mockServer, _, _, _, _, _, _ := setupTestEnv(t)
+	defer tearDownTestEnv(mockServer)
+
+	// Start Wallet Server
+	walletPort := 8081
+	blockchainNodeAddress := fmt.Sprintf("http://127.0.0.1:%d", cfg.Port)
+	ws := walletserver.NewWalletServer(uint64(walletPort), blockchainNodeAddress)
+	stop := ws.Start()
+	t.Cleanup(func() {
+		stop()
+	})
+
+	time.Sleep(time.Second)
+
+	// Test: Create a transaction via wallet
+	url := fmt.Sprintf("http://127.0.0.1:%d/send_signed_txn", walletPort) // Send to send_signed_txn, not /transactions
+	jsonData := map[string]interface{}{
+		"from_address": "0x234",
+		"to_address":   "0x567",
+		"value":        10,
+	}
+	jsonValue, _ := json.Marshal(jsonData)
+
+	// Add the private key to the request
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonValue))
+	if err != nil {
+		t.Fatal(err)
+	}
+	//q := req.URL.Query()
+	//q.Add("privateKey", "YOUR_PRIVATE_KEY_HERE") // Replace with an actual test private key!
+	//req.URL.RawQuery = q.Encode()
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Failed to post a transaction: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("Expected status created but got: %v", resp.StatusCode)
+	}
+
+	// Check if transaction went to the transaction pool
+	url = fmt.Sprintf("http://127.0.0.1:%d/transactions", cfg.Port)
+
+	var transactions []*transaction.Transaction
+	// Retry logic to handle eventual consistency
+	for i := 0; i < 5; i++ { // Retry up to 5 times
+
+		resp, err = http.Get(url)
+		if err != nil {
+			t.Fatalf("Failed to fetch transactions: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusOK { // Only unmarshal if status is OK
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatalf("Failed to read response body: %v", err)
+			}
+			err = json.Unmarshal(body, &transactions)
+
+			if err == nil {
+				break // Exit retry loop if unmarshal successful
+			} else {
+				t.Logf("Attempt %d: Failed to unmarshal transactions: %v. Retrying...", i+1, err)
+				time.Sleep(time.Second) // Wait before retrying
+			}
+		} else {
+			t.Logf("Attempt %d: Expected status OK but got %v. Retrying...", i+1, resp.StatusCode)
+			time.Sleep(time.Second)
+		}
+
+	}
+	if len(transactions) == 0 {
+		t.Fatalf("Test failed, unable to retrieve transactions")
+	}
+
+	if len(transactions) != 1 {
+		t.Fatalf("Expected one transaction but got %v", len(transactions))
+	}
+}
+
+func Test_PeerSync(t *testing.T) {
+	// Set up test environment
+	cfg, _, _, _, _, _, _, _ := setupTestEnv(t)
+
+	//Start Node 1 (Use StartTestNode as before)
+	cmd1, err := StartTestNode(int(cfg.Port), "0x123", "")
+	if err != nil {
+		t.Fatalf("Failed to start test node 1: %v", err)
+	}
+	defer func() {
+		if cmd1 != nil && cmd1.Process != nil {
+			cmd1.Process.Kill()
+			cmd1.Wait()
+		}
+	}()
+
+	//Start Node 2
+	ts2Port := int(cfg.Port) + 2 // Define port for the second node (Use a different port like 5002)
+	ts2, err := StartTestNode(ts2Port, "0x456", fmt.Sprintf("http://127.0.0.1:%d", cfg.Port))
+	if err != nil {
+		t.Fatalf("Failed to start test node 2: %v", err)
+		if ts2 != nil && ts2.Process != nil {
+			ts2.Process.Kill()
+			ts2.Wait()
+		}
+		return
+	}
+	defer func() {
+		if ts2 != nil && ts2.Process != nil {
+			ts2.Process.Kill()
+			ts2.Wait()
+		}
+	}()
+
+	time.Sleep(10 * time.Second)
+
+	// Fetch blocks from Node 1
+	url1 := fmt.Sprintf("http://127.0.0.1:%d/blocks", cfg.Port)
+
+	var blocks1 []*block.Block
+	// Retry logic for node 1
+	for i := 0; i < 5; i++ {
+		resp1, err := http.Get(url1)
+		if err != nil {
+			t.Fatalf("Failed to fetch blocks from node 1: %v", err)
+		}
+		defer resp1.Body.Close()
+		if resp1.StatusCode == http.StatusOK {
+			body1, err := io.ReadAll(resp1.Body)
+			if err != nil {
+				t.Fatalf("Failed to read response body from node 1 %v", err)
+			}
+			err = json.Unmarshal(body1, &blocks1)
+			if err == nil {
+				break
+			} else {
+				t.Logf("Attempt %d: Failed to unmarshal blocks from node 1: %v. Retrying...", i+1, err)
+				time.Sleep(time.Second)
+
+			}
+		} else {
+			t.Logf("Attempt %d: Expected status OK from node 1 but got: %v. Retrying...", i+1, resp1.StatusCode)
+			time.Sleep(time.Second)
+		}
+	}
+	if len(blocks1) == 0 {
+		t.Fatalf("Test failed, unable to retrieve blocks from node 1")
+	}
+
+	// Fetch blocks from Node 2
+	url2 := fmt.Sprintf("http://127.0.0.1:%d/blocks", ts2Port)
+	var blocks2 []*block.Block
+	// Retry logic for node 2
+	for i := 0; i < 5; i++ {
+		resp2, err := http.Get(url2)
+		if err != nil {
+			t.Fatalf("Failed to fetch blocks from node 2: %v", err)
+		}
+		defer resp2.Body.Close()
+
+		if resp2.StatusCode == http.StatusOK {
+			body2, err := io.ReadAll(resp2.Body)
+			if err != nil {
+				t.Fatalf("Failed to read response body from node 2 %v", err)
+			}
+			err = json.Unmarshal(body2, &blocks2)
+			if err == nil {
+				break
+			} else {
+				t.Logf("Attempt %d: Failed to unmarshal blocks from node 2: %v. Retrying...", i+1, err)
+				time.Sleep(time.Second)
+			}
+		} else {
+			t.Logf("Attempt %d: Expected status OK from node 2 but got: %v. Retrying...", i+1, resp2.StatusCode)
+			time.Sleep(time.Second)
+		}
+	}
+	if len(blocks2) == 0 {
+		t.Fatalf("Test failed, unable to retrieve blocks from node 2")
+	}
+
+	if len(blocks1) != len(blocks2) {
+		t.Fatalf("Expected the nodes to be sync but got node 1 blocks: %v and node 2 blocks: %v", len(blocks1), len(blocks2))
+	}
+	if !utils.CompareBlocks(blocks1, blocks2) {
+		t.Fatalf("Expected the blocks to be the same but they are not")
+	}
 }

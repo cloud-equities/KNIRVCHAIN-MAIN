@@ -74,18 +74,9 @@ func (w *Wallet) GetSignedTxn(unsignedTxn transaction.Transaction) (*transaction
 	if err != nil {
 		return nil, err
 	}
-
-	var signedTxn transaction.Transaction
-	signedTxn.From = unsignedTxn.From
-	signedTxn.To = unsignedTxn.To
-	signedTxn.Data = unsignedTxn.Data
-	signedTxn.Status = unsignedTxn.Status
-	signedTxn.Value = unsignedTxn.Value
-	signedTxn.Timestamp = unsignedTxn.Timestamp
-	signedTxn.TransactionHash = unsignedTxn.TransactionHash
-	// new fields
+	signedTxn := transaction.NewTransaction(unsignedTxn.From, unsignedTxn.To, unsignedTxn.Value, unsignedTxn.Data)
 	signedTxn.Signature = sig
 	signedTxn.PublicKey = w.GetPublicKeyHex()
 
-	return &signedTxn, nil
+	return signedTxn, nil
 }

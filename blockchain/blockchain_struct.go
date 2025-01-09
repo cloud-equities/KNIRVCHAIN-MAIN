@@ -1,14 +1,15 @@
 package blockchain
 
 import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"sync"
+	"time"
+
 	"KNIRVCHAIN-MAIN/block"
 	"KNIRVCHAIN-MAIN/constants"
 	"KNIRVCHAIN-MAIN/events"
-	"encoding/json"
-	"log"
-	"strings"
-	"sync"
-
 	"KNIRVCHAIN-MAIN/peerManager"
 	"KNIRVCHAIN-MAIN/transaction"
 )
@@ -22,11 +23,12 @@ type BlockchainStruct struct {
 	Broadcaster      transaction.TransactionBroadcaster `json:"-"`
 	BlockAdded       chan events.BlockAddedEvent        `json:"-"`
 	TransactionAdded chan events.TransactionAddedEvent  `json:"-"`
+	PeerManager      *peerManager.PeerManager           `json:"-"`
 }
 
 var mutex sync.Mutex
 
-func NewBlockchain(genesisBlock block.Block, address string, broadcaster transaction.TransactionBroadcaster) *BlockchainStruct {
+func NewBlockchain(genesisBlock block.Block, address string, broadcaster transaction.TransactionBroadcaster, peerManager *peerManager.PeerManager) *BlockchainStruct {
 	exists, _ := KeyExists()
 
 	if exists {
@@ -48,15 +50,16 @@ func NewBlockchain(genesisBlock block.Block, address string, broadcaster transac
 		blockchainStruct.BlockAdded = make(chan events.BlockAddedEvent)
 		blockchainStruct.TransactionAdded = make(chan events.TransactionAddedEvent)
 		blockchainStruct.Broadcaster = broadcaster
-		err := PutIntoDb(*blockchainStruct)
-		if err != nil {
-			panic(err.Error())
-		}
+		blockchainStruct.PeerManager = peerManager
+		//	err := PutIntoDb(*blockchainStruct)
+		//if err != nil {
+		//	panic(err.Error())
+		//}
 		return blockchainStruct
 	}
 }
 
-func NewBlockchainFromSync(remoteBlocks []*peerManager.RemoteBlock, address string, broadcaster transaction.TransactionBroadcaster) *BlockchainStruct {
+func NewBlockchainFromSync(remoteBlocks []*peerManager.RemoteBlock, address string, broadcaster transaction.TransactionBroadcaster, peerManager *peerManager.PeerManager) *BlockchainStruct {
 	// 1. Convert RemoteBlock to Block: Deep copy is essential to avoid modification issues
 	blocks := make([]*block.Block, len(remoteBlocks))
 	for i, rb := range remoteBlocks {
@@ -77,7 +80,7 @@ func NewBlockchainFromSync(remoteBlocks []*peerManager.RemoteBlock, address stri
 		Peers:        make(map[string]bool),
 		Broadcaster:  broadcaster, // Your transaction broadcaster
 		MiningLocked: false,       // Add other necessary fields
-
+		PeerManager:  peerManager,
 	}
 	return bc
 }
@@ -93,18 +96,16 @@ func (bc BlockchainStruct) ToJson() string {
 }
 
 func (bc *BlockchainStruct) AddBlock(b *block.Block) {
-	mutex.Lock()
-	defer mutex.Unlock()
 
 	m := map[string]bool{}
 	for _, txn := range b.Transactions {
-		m[txn.TransactionHash] = true
+		m[txn.Hash()] = true
 	}
 
 	// remove txn from txn pool
 	newTxnPool := []*transaction.Transaction{}
 	for _, txn := range bc.TransactionPool {
-		_, ok := m[txn.TransactionHash]
+		_, ok := m[txn.Hash()]
 		if !ok {
 			newTxnPool = append(newTxnPool, txn)
 		}
@@ -119,6 +120,7 @@ func (bc *BlockchainStruct) AddBlock(b *block.Block) {
 		panic(err.Error())
 	}
 	bc.BlockAdded <- events.BlockAddedEvent{Block: b} // Send the event to the event channel
+	log.Printf("Block added: %+v", b)                 // Log only if necessary
 }
 
 func (bc *BlockchainStruct) appendTransactionToTheTransactionPool(transaction *transaction.Transaction) {
@@ -137,7 +139,7 @@ func (bc *BlockchainStruct) appendTransactionToTheTransactionPool(transaction *t
 func (bc *BlockchainStruct) AddTransactionToTransactionPool(transaction *transaction.Transaction) {
 
 	for _, txn := range bc.TransactionPool {
-		if txn.TransactionHash == transaction.TransactionHash {
+		if txn.Hash() == transaction.Hash() {
 			return
 		}
 	}
@@ -162,7 +164,10 @@ func (bc *BlockchainStruct) AddTransactionToTransactionPool(transaction *transac
 
 }
 func (bc *BlockchainStruct) BroadcastLocalTransaction(txn *transaction.Transaction) {
-	bc.Broadcaster.BroadcastTransaction(txn, bc.Address)                  // Use the interface
+	bc.Broadcaster.BroadcastTransaction(txn, bc.Address)
+
+	// Log only if needed:
+	log.Println("Broadcasting Transaction", txn)                          // Use the interface
 	bc.TransactionAdded <- events.TransactionAddedEvent{Transaction: txn} // Send the event to the event channel
 }
 
@@ -181,81 +186,71 @@ func (bc *BlockchainStruct) simulatedBalanceCheck(valid1 bool, transaction *tran
 	return balance >= transaction.Value
 }
 
-func (bc *BlockchainStruct) ProofOfWorkMining(minersAddress string) {
-	log.Println("Starting to Mine...")
-	// calculate the prevHash
-	nonce := 0
+func (bc *BlockchainStruct) MineNewBlock(minersAddress string) (*block.Block, error) {
+	bc.MiningLocked = true // Lock mining during block creation
+
+	defer func() { bc.MiningLocked = false }() // Unlock *always*, even if error
+
+	prevHash := bc.Blocks[len(bc.Blocks)-1].Hash()
+	newBlock := block.NewBlock(prevHash, 0, uint64(len(bc.Blocks))) // nonce starts at 0
+
+	// Deep copy transactions from the pool
+	for _, txn := range bc.TransactionPool {
+		newTxn := transaction.NewTransaction(txn.From, txn.To, txn.Value, txn.Data)
+		newTxn.Timestamp = txn.Timestamp // Ensure timestamp is copied
+		newTxn.Status = txn.Status
+		newTxn.Signature = txn.Signature
+		newTxn.PublicKey = txn.PublicKey                                  // Ensure public key is copied
+		if err := newBlock.AddTransactionToTheBlock(newTxn); err != nil { // Use AddTransactionToTheBlock
+			return nil, fmt.Errorf("failed to add transaction to block: %w", err)
+		}
+
+	}
+
+	rewardTxn := transaction.NewTransaction(constants.BLOCKCHAIN_ADDRESS, minersAddress, constants.MINING_REWARD, []byte{})
+	rewardTxn.Status = constants.SUCCESS
+	if err := newBlock.AddTransactionToTheBlock(rewardTxn); err != nil {
+		return nil, fmt.Errorf("failed to add reward transaction: %w", err)
+	}
+
+	if err := newBlock.Mine(constants.MINING_DIFFICULTY); err != nil {
+		return nil, fmt.Errorf("mining error: %w", err)
+	}
+	return newBlock, nil
+}
+
+func (bc *BlockchainStruct) ProofOfWorkMining(minersAddress string, stopMining <-chan bool, miningStopped chan<- bool) {
 	for {
+
 		if bc.MiningLocked {
+			time.Sleep(constants.MINING_PAUSE_TIME * time.Second)
 			continue
 		}
 
-		prevHash := bc.Blocks[len(bc.Blocks)-1].Hash()
+		select {
+		case <-stopMining:
 
-		if bc.MiningLocked {
-			continue
-		}
+			miningStopped <- true
+			return
 
-		// start with a nonce
-		// create a new block
-		guessBlock := block.NewBlock(prevHash, nonce, uint64(len(bc.Blocks)))
+		default:
 
-		if bc.MiningLocked {
-			continue
-		}
-		// copy the transaction pool
-		for _, txn := range bc.TransactionPool {
+			newBlock, err := bc.MineNewBlock(minersAddress)
+			if err != nil {
+				log.Println("Error Mining Block: ", err)
 
-			if bc.MiningLocked {
-				continue
+				continue // Don't crash, try again in the next iteration
 			}
-
-			newTxn := new(transaction.Transaction)
-			newTxn.Data = txn.Data
-			newTxn.From = txn.From
-			newTxn.To = txn.To
-			newTxn.Status = txn.Status
-			newTxn.Timestamp = txn.Timestamp
-			newTxn.Value = txn.Value
-			newTxn.TransactionHash = txn.TransactionHash
-			newTxn.PublicKey = txn.PublicKey
-			newTxn.Signature = txn.Signature
-
-			guessBlock.AddTransactionToTheBlock(newTxn)
-		}
-
-		if bc.MiningLocked {
-			continue
-		}
-
-		rewardTxn := transaction.NewTransaction(constants.BLOCKCHAIN_ADDRESS, minersAddress, constants.MINING_REWARD, []byte{})
-		rewardTxn.Status = constants.SUCCESS
-		guessBlock.Transactions = append(guessBlock.Transactions, rewardTxn)
-
-		if bc.MiningLocked {
-			continue
-		}
-
-		// guess the Hash
-		guessHash := guessBlock.Hash()
-		desiredHash := strings.Repeat("0", constants.MINING_DIFFICULTY)
-		ourSolutionHash := guessHash[2 : 2+constants.MINING_DIFFICULTY]
-
-		if bc.MiningLocked {
-			continue
-		}
-
-		if ourSolutionHash == desiredHash {
 
 			if !bc.MiningLocked {
-				bc.AddBlock(guessBlock)
-				log.Println("Mined block number:", guessBlock.BlockNumber)
+				bc.AddBlock(newBlock)
+				log.Println("Mined block number:", newBlock.BlockNumber)
+				bc.BroadcastLocalTransaction(newBlock.Transactions[len(newBlock.Transactions)-1])
+
 			}
-			nonce = 0
-			continue
+
 		}
 
-		nonce++
 	}
 
 }
@@ -299,4 +294,23 @@ func (bc *BlockchainStruct) GetAllTxns() []transaction.Transaction {
 	}
 
 	return nTxns
+}
+func (bc *BlockchainStruct) AddTransaction(txn transaction.Transaction) error {
+
+	if bc.MiningLocked {
+		return fmt.Errorf("mining is locked, cannot add transaction") // Useful error message
+
+	}
+
+	if !txn.VerifyTxn() {
+		return fmt.Errorf("txn verification failed")
+	}
+
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	bc.TransactionPool = append(bc.TransactionPool, &txn)
+	bc.TransactionAdded <- events.TransactionAddedEvent{Transaction: &txn} // Send event *after* adding to pool
+	return nil
+
 }

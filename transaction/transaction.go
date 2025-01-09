@@ -14,36 +14,14 @@ import (
 )
 
 type Transaction struct {
-	From            string            `json:"from"`
-	To              string            `json:"to"`
-	Value           uint64            `json:"value"`
-	Data            []byte            `json:"data"`
-	Status          string            `json:"status"`
-	Timestamp       int64             `json:"timestamp"`
-	TransactionHash string            `json:"transaction_hash"`
-	PublicKey       string            `json:"public_key,omitempty"`
-	Signature       []byte            `json:"Signature"`
-	TransactionPool []TransactionPool `json:"transaction_pool"`
-	Blocks          []TransactionPool `json:"blocks"`
-	BlockNumber     uint64            `json:"block_number"`
-}
-
-type TransactionPool struct {
-	Transactions []TransactionsList `json:"transactions"`
-	Blocks       []TransactionPool  `json:"blocks"`
-}
-
-type TransactionsList struct {
-	Transaction Transaction `json:"transaction"`
-}
-
-// NewTransactionPool creates a new TransactionPool from a slice of Transactions
-func NewTransactionPool(transactions []*Transaction) TransactionPool {
-	var txnLists []TransactionsList
-	for _, txn := range transactions {
-		txnLists = append(txnLists, TransactionsList{Transaction: *txn})
-	}
-	return TransactionPool{Transactions: txnLists}
+	From      string `json:"from"`
+	To        string `json:"to"`
+	Value     uint64 `json:"value"`
+	Data      []byte `json:"data"`
+	Status    string `json:"status"`
+	Timestamp int64  `json:"timestamp"`
+	PublicKey string `json:"public_key,omitempty"`
+	Signature []byte `json:"signature"`
 }
 
 func NewTransaction(from, to string, value uint64, data []byte) *Transaction {
@@ -56,7 +34,6 @@ func NewTransaction(from, to string, value uint64, data []byte) *Transaction {
 	t.Status = constants.PENDING
 	t.PublicKey = ""
 	t.Signature = []byte{}
-	t.TransactionHash = t.Hash()
 	return t
 }
 
@@ -91,8 +68,7 @@ func (t Transaction) VerifyTxn() bool {
 	return true
 }
 
-func (t *Transaction) VerifySignature() bool {
-
+func (t Transaction) VerifySignature() bool {
 	if t.Signature == nil {
 		return false
 	}
@@ -103,20 +79,22 @@ func (t *Transaction) VerifySignature() bool {
 
 	signature := t.Signature
 	publicKeyHex := t.PublicKey
-	t.Signature = []byte{}
-	t.PublicKey = ""
+
+	// Create a copy of the transaction to verify
+	txnCopy := t
+	txnCopy.Signature = []byte{}
+	txnCopy.PublicKey = ""
+
 	publicKeyEcdsa := GetPublicKeyFromHex(publicKeyHex)
 
-	bs, _ := json.Marshal(t)
+	bs, _ := json.Marshal(txnCopy)
 	hash := sha256.Sum256(bs)
 
 	valid := ecdsa.VerifyASN1(publicKeyEcdsa, hash[:], signature)
-	t.Signature = signature
 	return valid
 }
 
 func (t Transaction) Hash() string {
-
 	bs, _ := json.Marshal(t)
 	sum := sha256.Sum256(bs)
 	hexRep := hex.EncodeToString(sum[:32])

@@ -1,15 +1,16 @@
 package consensus
 
 import (
+	"log"
+	"sync"
+	"time"
+
 	"KNIRVCHAIN-MAIN/block"
 	"KNIRVCHAIN-MAIN/blockchain"
 	"KNIRVCHAIN-MAIN/constants"
 	"KNIRVCHAIN-MAIN/events"
 	"KNIRVCHAIN-MAIN/peerManager"
 	"KNIRVCHAIN-MAIN/transaction"
-	"log"
-	"sync"
-	"time"
 )
 
 // ConsensusManager manages the blockchain consensus.
@@ -50,7 +51,7 @@ func GetPeerManager(blockAdded <-chan events.BlockAddedEvent, transactionAdded <
 }
 
 // RunConsensus runs the blockchain consensus algorithm.
-func (cm *ConsensusManager) RunConsensus() {
+func (cm *ConsensusManager) RunConsensus(startMining chan bool) {
 	for {
 		if cm.Blockchain.MiningLocked {
 			time.Sleep(constants.CONSENSUS_PAUSE_TIME * time.Second)
@@ -58,8 +59,6 @@ func (cm *ConsensusManager) RunConsensus() {
 		}
 
 		log.Println("Starting the consensus algorithm...")
-
-		cm.Blockchain.MiningLocked = true // Lock before updating
 
 		longestChain := cm.Blockchain.Blocks
 		longestChainIsOurs := true
@@ -77,7 +76,7 @@ func (cm *ConsensusManager) RunConsensus() {
 					continue
 				}
 				// Access remotePeerManager.Blocks
-				if len(remotePeerManager.Blocks) > 0 && (len(longestChain) == 0 || pm.TransactionPool[len(pm.TransactionPool)-1].BlockNumber > longestChain[len(longestChain)-1].BlockNumber) {
+				if len(remotePeerManager.Blocks) > 0 && (len(longestChain) == 0 || remotePeerManager.Blocks[len(remotePeerManager.Blocks)-1].BlockNumber > longestChain[len(longestChain)-1].BlockNumber) {
 					if cm.PeerManager.VerifyLastNBlocks(remotePeerManager.Blocks) {
 						longestChain = make([]*block.Block, len(remotePeerManager.Blocks))
 						for i, rb := range remotePeerManager.Blocks {
@@ -121,6 +120,7 @@ func (cm *ConsensusManager) RunConsensus() {
 
 				newBlocks = append(newBlocks, newBlock)
 			}
+			startMining <- true                         // signal to start mining.
 			cm.Blockchain.Blocks = newBlocks            // Update the blockchain
 			err := blockchain.PutIntoDb(*cm.Blockchain) // Save to DB after successful update
 			if err != nil {

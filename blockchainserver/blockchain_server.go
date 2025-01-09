@@ -2,45 +2,52 @@ package blockchainserver
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
-	"strconv"
 
 	"KNIRVCHAIN-MAIN/blockchain"
-	"KNIRVCHAIN-MAIN/consensus"
 	"KNIRVCHAIN-MAIN/constants"
-	"KNIRVCHAIN-MAIN/events"
-
 	"KNIRVCHAIN-MAIN/transaction"
 )
 
 type BlockchainServer struct {
 	Port          uint64                       `json:"port"`
 	BlockchainPtr *blockchain.BlockchainStruct `json:"blockchain"`
-	MiningLocked  bool                         `json:"mining_locked"`
+	Server        *http.Server
+	MiningLocked  bool `json:"mining_locked"`
 }
 
 func NewBlockchainServer(port uint64, blockchainPtr *blockchain.BlockchainStruct) *BlockchainServer {
 	bcs := new(BlockchainServer)
 	bcs.Port = port
 	bcs.BlockchainPtr = blockchainPtr
+	bcs.Server = &http.Server{Addr: fmt.Sprintf(":%d", bcs.Port)}
 
 	return bcs
 }
 
 func (bcs *BlockchainServer) GetBlockchain(w http.ResponseWriter, req *http.Request) {
-	w.Header().Add("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json")
 	if req.Method == http.MethodGet {
-		io.WriteString(w, bcs.BlockchainPtr.ToJson())
+		blocks := bcs.BlockchainPtr.Blocks
+		blockJSON, err := json.Marshal(blocks)
+		if err != nil {
+			http.Error(w, "Failed to marshal blocks to json", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write(blockJSON)
+
 	} else {
 		http.Error(w, "Invalid Method", http.StatusBadRequest)
 	}
 }
 
 func (bcs *BlockchainServer) GetBalance(w http.ResponseWriter, req *http.Request) {
-	w.Header().Add("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json")
 	if req.Method == http.MethodGet {
 		addr := req.URL.Query().Get("address")
 		x := struct {
@@ -54,14 +61,15 @@ func (bcs *BlockchainServer) GetBalance(w http.ResponseWriter, req *http.Request
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		io.WriteString(w, string(mBalance))
+		w.WriteHeader(http.StatusOK)
+		w.Write(mBalance)
 	} else {
 		http.Error(w, "Invalid Method", http.StatusBadRequest)
 	}
 }
 
 func (bcs *BlockchainServer) GetAllNonRewardedTxns(w http.ResponseWriter, req *http.Request) {
-	w.Header().Add("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json")
 	if req.Method == http.MethodGet {
 		txnList := bcs.BlockchainPtr.GetAllTxns()
 		byteSlice, err := json.Marshal(txnList)
@@ -69,38 +77,51 @@ func (bcs *BlockchainServer) GetAllNonRewardedTxns(w http.ResponseWriter, req *h
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		io.WriteString(w, string(byteSlice))
+		w.WriteHeader(http.StatusOK)
+		w.Write(byteSlice)
 	} else {
 		http.Error(w, "Invalid Method", http.StatusBadRequest)
 	}
 }
 
-func (bcs *BlockchainServer) SendTxnToTheBlockchain(w http.ResponseWriter, req *http.Request) {
-	w.Header().Add("Content-Type", "application/json")
-	if req.Method == http.MethodPost {
-		request, err := ioutil.ReadAll(req.Body)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		defer req.Body.Close()
-
-		var newTxn transaction.Transaction
-
-		err = json.Unmarshal(request, &newTxn)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		go bcs.BlockchainPtr.AddTransactionToTransactionPool(&newTxn)
-
-		io.WriteString(w, newTxn.ToJson())
-	} else {
-		http.Error(w, "Invalid Method", http.StatusBadRequest)
+func (bcs *BlockchainServer) handleGetTransactions(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var transactions = bcs.BlockchainPtr.TransactionPool
+	w.WriteHeader(http.StatusOK)
+	err := json.NewEncoder(w).Encode(transactions)
+	if err != nil {
+		http.Error(w, "Failed to marshal transactions to json", http.StatusInternalServerError)
+		return
 	}
+}
 
+func (bcs *BlockchainServer) SendTxnToTheBlockchain(w http.ResponseWriter, req *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if req.Method == http.MethodPost {
+		var txn transaction.Transaction // Directly unmarshal into transaction.Transaction
+
+		if err := json.NewDecoder(req.Body).Decode(&txn); err != nil { // Decode request
+			http.Error(w, "Invalid transaction format", http.StatusBadRequest)
+			return
+		}
+		//Verify Transaction
+		if !txn.VerifyTxn() {
+			http.Error(w, "Invalid Txn Signature", http.StatusBadRequest)
+			return
+		}
+
+		err := bcs.BlockchainPtr.AddTransaction(txn) // Add to Blockchain Transaction Pool
+
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to add transaction: %v", err), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusCreated) // Return StatusCreated *only* on success
+		json.NewEncoder(w).Encode(txn)
+
+	} else {
+		http.Error(w, "Only POST requests are allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 func CheckStatus(w http.ResponseWriter, req *http.Request) {
@@ -112,7 +133,7 @@ func CheckStatus(w http.ResponseWriter, req *http.Request) {
 }
 
 func (bcs *BlockchainServer) SendPeersList(w http.ResponseWriter, req *http.Request) {
-	w.Header().Add("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json")
 	if req.Method == http.MethodPost {
 		peersMap, err := ioutil.ReadAll(req.Body)
 		if err != nil {
@@ -129,9 +150,8 @@ func (bcs *BlockchainServer) SendPeersList(w http.ResponseWriter, req *http.Requ
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		blockAddedChan := make(chan events.BlockAddedEvent)
-		transactionAddedChan := make(chan events.TransactionAddedEvent)
-		go consensus.GetPeerManager(blockAddedChan, transactionAddedChan).UpdatePeers(peersList)
+
+		bcs.BlockchainPtr.PeerManager.UpdatePeers(peersList)
 		res := map[string]string{}
 		res["status"] = "success"
 		x, err := json.Marshal(res)
@@ -140,13 +160,14 @@ func (bcs *BlockchainServer) SendPeersList(w http.ResponseWriter, req *http.Requ
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		io.WriteString(w, string(x))
+		w.WriteHeader(http.StatusCreated)
+		w.Write(x)
 	} else {
 		http.Error(w, "Invalid Method", http.StatusBadRequest)
 	}
 }
 func (bcs *BlockchainServer) FetchLastNBlocks(w http.ResponseWriter, req *http.Request) {
-	w.Header().Add("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json")
 	if req.Method == http.MethodGet {
 		blocks := bcs.BlockchainPtr.Blocks
 		blockchain1 := new(blockchain.BlockchainStruct)
@@ -155,8 +176,14 @@ func (bcs *BlockchainServer) FetchLastNBlocks(w http.ResponseWriter, req *http.R
 		} else {
 			blockchain1.Blocks = blocks[len(blocks)-constants.FETCH_LAST_N_BLOCKS:]
 		}
+		blockJSON, err := json.Marshal(blockchain1.Blocks)
+		if err != nil {
+			http.Error(w, "Failed to marshal blocks to json", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write(blockJSON)
 
-		io.WriteString(w, blockchain1.ToJson())
 	} else {
 		http.Error(w, "Invalid Method", http.StatusBadRequest)
 	}
@@ -165,14 +192,28 @@ func (bcs *BlockchainServer) FetchLastNBlocks(w http.ResponseWriter, req *http.R
 func (bcs *BlockchainServer) Start() {
 	http.HandleFunc("/", bcs.GetBlockchain)
 	http.HandleFunc("/balance", bcs.GetBalance)
+	http.HandleFunc("/blocks", bcs.GetBlockchain)
 	http.HandleFunc("/get_all_non_rewarded_txns", bcs.GetAllNonRewardedTxns)
 	http.HandleFunc("/send_txn", bcs.SendTxnToTheBlockchain)
+	http.HandleFunc("/transactions", bcs.handleGetTransactions)
 	http.HandleFunc("/send_peers_list", bcs.SendPeersList)
 	http.HandleFunc("/check_status", CheckStatus)
 	http.HandleFunc("/fetch_last_n_blocks", bcs.FetchLastNBlocks)
 	log.Println("Launching webserver at port :", bcs.Port)
-	err := http.ListenAndServe("127.0.0.1:"+strconv.Itoa(int(bcs.Port)), nil)
-	if err != nil {
-		panic(err)
+	go func() {
+		if err := bcs.Server.ListenAndServe(); err != http.ErrServerClosed {
+			log.Fatalf("Failed to start blockchain server: %v", err)
+		}
+	}()
+
+}
+
+func (bcs *BlockchainServer) Stop() {
+	if err := bcs.Server.Shutdown(nil); err != nil {
+		panic(err) // failure/timeout shutting down the server gracefully
 	}
+}
+
+func init() {
+	log.SetPrefix(constants.BLOCKCHAIN_NAME + ":")
 }

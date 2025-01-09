@@ -21,5 +21,7 @@ const (
 	PEER_PING_PAUSE_TIME      = 60 // In seconds
 	TXN_BROADCAST_PAUSE_TIME  = 1  // In seconds
 	FETCH_LAST_N_BLOCKS       = 50
-	CONSENSUS_PAUSE_TIME      = 10 // In seconds
+	CONSENSUS_PAUSE_TIME      = 5 // In seconds
+	MINING_PAUSE_TIME         = 2 // In seconds
+	TXN_PER_BLOCK_LIMIT       = 2
 )

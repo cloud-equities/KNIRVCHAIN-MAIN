@@ -7,7 +7,9 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
+
+	//"sync"
+	"time"
 
 	"github.com/joho/godotenv"
 
@@ -18,7 +20,12 @@ import (
 	"KNIRVCHAIN-MAIN/constants"
 	"KNIRVCHAIN-MAIN/events"
 	"KNIRVCHAIN-MAIN/peerManager"
+	"KNIRVCHAIN-MAIN/transaction"
 	"KNIRVCHAIN-MAIN/walletserver"
+)
+
+const (
+	minersAddressFlag = "miners_address" // Define a constant for the flag name
 )
 
 type Config struct {
@@ -52,6 +59,21 @@ type Config struct {
 func loadConfig() (*Config, error) {
 	//Load .env file
 	err := godotenv.Load()
+
+	if os.Getenv("MINING_DIFFICULTY") == "" {
+		return nil, fmt.Errorf("MINING_DIFFICULTY is not set")
+	}
+	if os.Getenv("MINING_REWARD") == "" {
+		return nil, fmt.Errorf("MINING_REWARD is not set")
+	}
+	if os.Getenv("DECIMAL") == "" {
+		return nil, fmt.Errorf("DECIMAL is not set")
+	}
+	if os.Getenv("CONSENSUS_PAUSE_TIME") == "" {
+
+		return nil, fmt.Errorf("CONSENSUS_PAUSE_TIME is not set")
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("error loading .env file: %w", err)
 	}
@@ -88,10 +110,10 @@ func loadConfig() (*Config, error) {
 	cfg.TxnVerificationSuccess = os.Getenv("TXN_VERIFICATION_SUCCESS")
 	cfg.TxnVerificationFailure = os.Getenv("TXN_VERIFICATION_FAILURE")
 	cfg.BlockchainStatus = os.Getenv("BLOCKCHAIN_STATUS")
-	cfg.PeerBroadcastPauseTime, err1 = strconv.Atoi(os.Getenv("PEER_BROADCAST_PAUSE_TIME"))
-	cfg.PeerPingPauseTime, err1 = strconv.Atoi(os.Getenv("PEER_PING_PAUSE_TIME"))
-	cfg.TxnBroadcastPauseTime, err1 = strconv.Atoi(os.Getenv("TXN_BROADCAST_PAUSE_TIME"))
-	cfg.FetchLastNBlocks, err1 = strconv.Atoi(os.Getenv("FETCH_LAST_N_BLOCKS"))
+	//cfg.PeerBroadcastPauseTime, err1 = strconv.Atoi(os.Getenv("PEER_BROADCAST_PAUSE_TIME"))
+	//cfg.PeerPingPauseTime, err1 = strconv.Atoi(os.Getenv("PEER_PING_PAUSE_TIME"))
+	//cfg.TxnBroadcastPauseTime, err1 = strconv.Atoi(os.Getenv("TXN_BROADCAST_PAUSE_TIME"))
+	//cfg.FetchLastNBlocks, err1 = strconv.Atoi(os.Getenv("FETCH_LAST_N_BLOCKS"))
 	cfg.ConsensusPauseTime, err1 = strconv.Atoi(os.Getenv("CONSENSUS_PAUSE_TIME"))
 	if err1 != nil {
 		return nil, fmt.Errorf("error parsing an integer config value: %w", err1)
@@ -116,98 +138,123 @@ func init() {
 
 func main() {
 
-	// Load configuration from .env
+	// Load configuration
 	cfg, err := loadConfig()
 	if err != nil {
-		log.Fatal(err)
+		log.Println("Error loading configuration:", err)
+		os.Exit(1)
 	}
 
+	// Define command-line flags
 	chainCmdSet := flag.NewFlagSet("chain", flag.ExitOnError)
 	walletCmdSet := flag.NewFlagSet("wallet", flag.ExitOnError)
 
-	chainPort := chainCmdSet.Uint64("port", cfg.Port, "HTTP port to launch our blockchain server")
-	chainMiner := chainCmdSet.String(cfg.MinersAddress, "", "Miners address to credit mining reward")
-	remoteNode := chainCmdSet.String("remote_node", "", "Remote Node from where the blockchain will be synced")
+	chainPort := chainCmdSet.Uint64("port", cfg.Port, "HTTP port for blockchain server")
+	chainMiner := chainCmdSet.String(minersAddressFlag, "", "Miner's address")
+	remoteNode := chainCmdSet.String("remote_node", "", "Remote node for syncing")
 
-	walletPort := walletCmdSet.Uint64("port", 8080, "HTTP port to launch our wallet server")
-	blockchainNodeAddress := walletCmdSet.String("node_address", "http://127.0.0.1:5000", "Blockchain node address for the wallet gateway")
+	walletPort := walletCmdSet.Uint64("port", 8080, "HTTP port for wallet server")
+	blockchainNodeAddress := walletCmdSet.String("node_address", "http://127.0.0.1:5001", "Blockchain node address")
 
+	// Check for subcommand
 	if len(os.Args) < 2 {
-		fmt.Println("Error:Expected chain or wallet subcommand")
+		fmt.Println("Error: Expected 'chain' or 'wallet' subcommand")
 		os.Exit(1)
 	}
 
 	switch os.Args[1] {
 	case "chain":
-		var wg sync.WaitGroup
-
+		//var wg sync.WaitGroup
 		chainCmdSet.Parse(os.Args[2:])
+
+		// Validate flags
 		if chainCmdSet.Parsed() {
 			if *chainMiner == "" || chainCmdSet.NFlag() == 0 {
-				fmt.Println("Usage of chain subcommand: ")
+				fmt.Println("Usage of chain subcommand:")
 				chainCmdSet.PrintDefaults()
 				os.Exit(1)
 			}
+		}
 
-			if *remoteNode == "" {
+		startMining := make(chan bool)
+		startConsensus := make(chan bool)
+		stopMining := make(chan bool)
+		miningStopped := make(chan bool)
 
-				genesisBlock := block.NewBlock("0x0", 0, 0)
-				blockAddedChan := make(chan events.BlockAddedEvent)
-				transactionAddedChan := make(chan events.TransactionAddedEvent)
-				pm := consensus.GetPeerManager(blockAddedChan, transactionAddedChan)
+		var bcs *blockchainserver.BlockchainServer
+		var consensusMgr *consensus.ConsensusManager
+		var pm *peerManager.PeerManager
+		var blockchain1 *blockchain.BlockchainStruct
 
-				// Initialize the PeerManager with the blockchain address:
-				pm.Address = "http://127.0.0.1:" + strconv.Itoa(int(*chainPort)) // Assign the address
-				for _, peerAddress := range cfg.PeerAddresses {                  // Fix assignment using map
-					pm.Peers[peerAddress] = peerManager.Peer{Address: peerAddress, Status: true}
-					log.Println("Added Peer:", peerAddress)
+		blockAddedChan := make(chan events.BlockAddedEvent)
+		transactionAddedChan := make(chan events.TransactionAddedEvent)
+		pm = consensus.GetPeerManager(blockAddedChan, transactionAddedChan)
+
+		if *remoteNode == "" {
+			genesisBlock := block.NewBlock("0x0", 0, 0)
+
+			pm.Address = "http://127.0.0.1:" + strconv.Itoa(int(*chainPort))
+
+			pm.Broadcaster = peerManager.PeerTransactionBroadcaster{PeerManager: pm}
+			blockchain1 = blockchain.NewBlockchain(*genesisBlock, pm.Address, &pm.Broadcaster, pm)
+			blockchain1.Peers[blockchain1.Address] = true
+			bcs = blockchainserver.NewBlockchainServer(*chainPort, blockchain1)
+			consensusMgr = consensus.NewConsensusManager(blockchain1, pm)
+			go func() { // This goroutine MUST start AFTER blockchain1 is initialized
+				for event := range blockchain1.TransactionAdded {
+					pm.UpdateTransactionPool([]*transaction.Transaction{event.Transaction})
 				}
+			}()
 
-				pm.Broadcaster = peerManager.PeerTransactionBroadcaster{PeerManager: pm} // Initialize the Broadcaster!!!
+		} else {
+			genesisBlock := block.NewBlock("0x0", 0, 0)
+			pm.Address = "http://127.0.0.1:" + strconv.Itoa(int(*chainPort))
+			pm.Broadcaster = peerManager.PeerTransactionBroadcaster{PeerManager: pm}
 
-				blockchain1 := blockchain.NewBlockchain(*genesisBlock, pm.Address, &pm.Broadcaster) // Address assigned from PeerManager
+			blockchain1 = blockchain.NewBlockchain(*genesisBlock, pm.Address, &pm.Broadcaster, pm)
 
-				blockchain1.Peers[blockchain1.Address] = true
-				bcs := blockchainserver.NewBlockchainServer(*chainPort, blockchain1.BlockchainPtr)
-
-				consensusMgr := consensus.NewConsensusManager(blockchain1, pm)
-				go consensusMgr.RunConsensus()
-				wg.Add(4)
-
-				go bcs.Start()
-
-				go bcs.BlockchainPtr.ProofOfWorkMining(*chainMiner)
-				go pm.StartListening()
-				go pm.DialAndUpdatePeers()
-				go consensusMgr.RunConsensus()
-				wg.Wait()
-			} else {
-				remotePeerManager, err := peerManager.SyncBlockchain(*remoteNode)
-				if err != nil {
-					fmt.Println(err.Error())
-					os.Exit(1)
-				}
-				blockAddedChan := make(chan events.BlockAddedEvent)
-				transactionAddedChan := make(chan events.TransactionAddedEvent)
-				pm := consensus.GetPeerManager(blockAddedChan, transactionAddedChan)
-				pm.Broadcaster = peerManager.PeerTransactionBroadcaster{PeerManager: pm} // Initialize the broadcaster
-
-				blockchain2 := blockchain.NewBlockchainFromSync(remotePeerManager.Blocks, pm.Address, &pm.Broadcaster)
-
-				blockchain2.Peers[blockchain2.Address] = true
-				bcs := blockchainserver.NewBlockchainServer(*chainPort, blockchain2)
-				wg.Add(4)
-				go bcs.Start()
-				go bcs.BlockchainPtr.ProofOfWorkMining(*chainMiner)
-				go pm.StartListening()
-
-				go pm.DialAndUpdatePeers()
-				consensusMgr := consensus.NewConsensusManager(blockchain2, pm) // Pass both blockchain and peer manager
-				go consensusMgr.RunConsensus()
-				wg.Wait()
+			// if *remoteNode != ""
+			remotePeerManager, err := peerManager.SyncBlockchain(*remoteNode)
+			if err != nil {
+				log.Println(err)
 			}
 
+			blockchain1 = blockchain.NewBlockchainFromSync(remotePeerManager.Blocks, pm.Address, &pm.Broadcaster, pm)
+			blockchain1.Peers[blockchain1.Address] = true
+			bcs = blockchainserver.NewBlockchainServer(*chainPort, blockchain1)
+			consensusMgr = consensus.NewConsensusManager(blockchain1, pm)
+
+			go func() { // This goroutine MUST start AFTER blockchain1 is initialized
+				for event := range blockchain1.TransactionAdded {
+					pm.UpdateTransactionPool([]*transaction.Transaction{event.Transaction})
+				}
+			}()
+
 		}
+
+		//wg.Add(1) // Wait for the server to start
+		bcs.Start()
+
+		//wg.Wait() // Server is running now
+
+		go pm.StartListening() // Start peer management AFTER server is up
+		go pm.DialAndUpdatePeers()
+
+		go func() {
+			<-startMining
+			bcs.BlockchainPtr.ProofOfWorkMining(*chainMiner, stopMining, miningStopped)
+		}()
+
+		go func() {
+			<-startConsensus
+			consensusMgr.RunConsensus(startMining)
+		}()
+
+		// Example: Trigger mining and consensus based on some condition or delay.
+		time.Sleep(5 * time.Second)
+		startMining <- true
+		startConsensus <- true
+
 	case "wallet":
 		walletCmdSet.Parse(os.Args[2:])
 		if walletCmdSet.Parsed() {

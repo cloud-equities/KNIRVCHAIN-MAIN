@@ -10,6 +10,8 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -171,14 +173,13 @@ func (pm *PeerManager) UpdateTransactionPool(Transactions []*transaction.Transac
 	defer pm.Mutex.Unlock()
 	for _, Transaction := range Transactions {
 		Transaction := &transaction.Transaction{
-			TransactionHash: Transaction.TransactionHash,
-			From:            Transaction.From,
-			To:              Transaction.To,
-			Data:            Transaction.Data,
-			Timestamp:       Transaction.Timestamp,
-			Status:          Transaction.Status,
-			PublicKey:       Transaction.PublicKey,
-			Signature:       Transaction.Signature,
+			From:      Transaction.From,
+			To:        Transaction.To,
+			Data:      Transaction.Data,
+			Timestamp: Transaction.Timestamp,
+			Status:    Transaction.Status,
+			PublicKey: Transaction.PublicKey,
+			Signature: Transaction.Signature,
 		}
 		pm.TransactionPool = append(pm.TransactionPool, Transaction)
 	}
@@ -345,9 +346,17 @@ func (ptb *PeerTransactionBroadcaster) BroadcastTransaction(txn *transaction.Tra
 }
 
 func FetchLastNBlocks(address string) (*PeerManager, error) {
-	log.Println("Fetching last", constants.FETCH_LAST_N_BLOCKS, "blocks")
-	ourURL := fmt.Sprintf("%s/fetch_last_n_blocks", address)
-	resp, err := http.Get(ourURL)
+	address = strings.TrimSpace(address) // Trim whitespace
+
+	u, err := url.Parse(address) // Parse the address into a URL
+	if err != nil {
+		return nil, fmt.Errorf("invalid peer address: %w", err)
+	}
+
+	u.Path = path.Join(u.Path, "fetch_last_n_blocks") // Use path.Join for correct path construction
+	fetchURL := u.String()
+
+	resp, err := http.Get(fetchURL)
 	if err != nil {
 		return nil, err
 	}
@@ -366,7 +375,6 @@ func FetchLastNBlocks(address string) (*PeerManager, error) {
 
 	return &nbc, nil
 }
-
 func (rb RemoteBlock) RemoteHash() string {
 
 	bs, _ := json.Marshal(rb)
