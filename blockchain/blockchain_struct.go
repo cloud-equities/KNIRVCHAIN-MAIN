@@ -131,15 +131,14 @@ func (bc *BlockchainStruct) AddTransactionToTransactionPool(transaction *transac
 	log.Println("Adding txn to the Transaction pool")
 
 	bc.appendTransactionToTheTransactionPool(transaction)
-	newTxn := &transaction.Transaction{
-		TransactionHash: transaction.TransactionHash,
-		From:            transaction.From,
-		To:              transaction.To,
-		Amount:          transaction.Data,
-		Timestamp:       transaction.Timestamp,
-		Status:          transaction.Status,
-		PublicKey:       transaction.PublicKey,
-		Signature:       transaction.Signature,
+	newTxn := &events.TransactionAddedEvent{
+		From:      transaction.From,
+		To:        transaction.To,
+		Data:      transaction.Data,
+		Timestamp: transaction.Timestamp,
+		Status:    transaction.Status,
+		PublicKey: transaction.PublicKey,
+		Signature: transaction.Signature,
 	}
 
 	valid1 := transaction.VerifyTxn()
@@ -158,7 +157,7 @@ func (bc *BlockchainStruct) AddTransactionToTransactionPool(transaction *transac
 
 	newTxn.PublicKey = ""
 
-	bc.BroadcastLocalTransaction(newTxn)
+	bc.BroadcastLocalTransaction(transaction)
 
 }
 func (bc *BlockchainStruct) BroadcastLocalTransaction(txn *transaction.Transaction) {

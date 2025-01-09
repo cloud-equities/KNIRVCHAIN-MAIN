@@ -15,7 +15,7 @@ import (
 	"KNIRVCHAIN-MAIN/blockchain"
 	"KNIRVCHAIN-MAIN/blockchainserver"
 	"KNIRVCHAIN-MAIN/constants"
-	peerManager "KNIRVCHAIN-MAIN/peermanager"
+	"KNIRVCHAIN-MAIN/peerManager"
 	"KNIRVCHAIN-MAIN/walletserver"
 )
 

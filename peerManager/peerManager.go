@@ -24,20 +24,18 @@ type PeerTransactionBroadcaster struct {
 	// You might need fields here to access the peer list, etc.  Possibly a reference to the PeerManager itself.
 	PeerManager *PeerManager
 }
-
 type PeerManager struct {
-	Peers                            map[string]Peer `json:"peers"`
-	Peer                             Peer            `json:"peer"`
-	TransactionPool                  []*Transaction  `json:"transaction_pool"`
-	Blocks                           []*RemoteBlock  `json:"block_chain"`
-	Address                          string          `json:"address"`
-	MiningLocked                     bool            `json:"mining_locked"`
-	Mutex                            sync.Mutex      `json:"mutex"`
-	BlockNumber                      uint64          `json:"block_number"`
-	PrevHash                         string          `json:"prevHash"`
-	Timestamp                        int64           `json:"timestamp"`
-	Nonce                            int             `json:"nonce"`
-	Transactions                     []*Transaction  `json:"transactions"`
+	Peers                            map[string]Peer            `json:"peers"`
+	Peer                             Peer                       `json:"peer"`
+	TransactionPool                  []*transaction.Transaction `json:"transaction_pool"`
+	Blocks                           []*RemoteBlock             `json:"block_chain"`
+	Address                          string                     `json:"address"`
+	MiningLocked                     bool                       `json:"mining_locked"`
+	Mutex                            sync.Mutex                 `json:"mutex"`
+	BlockNumber                      uint64                     `json:"block_number"`
+	PrevHash                         string                     `json:"prevHash"`
+	Timestamp                        int64                      `json:"timestamp"`
+	Nonce                            int                        `json:"nonce"`
 	BlockAddedSubscription           <-chan events.BlockAddedEvent
 	TransactionAddedSubscription     <-chan events.TransactionAddedEvent
 	BlockAddedSubscriptionChan       chan events.BlockAddedEvent
@@ -81,7 +79,7 @@ func GetPeerManager(blockAdded <-chan events.BlockAddedEvent, transactionAdded <
 	once.Do(func() {
 		pm = &PeerManager{
 			Peers:                        make(map[string]Peer),
-			TransactionPool:              []*Transaction{},
+			TransactionPool:              []*transaction.Transaction{},
 			Blocks:                       []*RemoteBlock{},
 			Address:                      "",
 			MiningLocked:                 false,
@@ -90,7 +88,6 @@ func GetPeerManager(blockAdded <-chan events.BlockAddedEvent, transactionAdded <
 			PrevHash:                     "",
 			Timestamp:                    0,
 			Nonce:                        0,
-			Transactions:                 []*Transaction{},
 			BlockAddedSubscription:       blockAdded,
 			TransactionAddedSubscription: transactionAdded,
 		}
@@ -104,19 +101,6 @@ type RemoteBlockchainStruct struct {
 	Address         string                         `json:"address"`
 	Peers           map[string]bool                `json:"peers"`
 	MiningLocked    bool                           `json:"mining_locked"`
-}
-
-type Transaction struct {
-	From            string                        `json:"from"`
-	To              string                        `json:"to"`
-	Value           uint64                        `json:"value"`
-	Data            []byte                        `json:"data"`
-	Status          string                        `json:"status"`
-	Timestamp       int64                         `json:"timestamp"`
-	TransactionHash string                        `json:"transaction_hash"`
-	PublicKey       string                        `json:"public_key,omitempty"`
-	Signature       []byte                        `json:"Signature"`
-	TransactionPool []transaction.TransactionPool `json:"transaction_pool"`
 }
 
 type RemoteBlock struct {
@@ -160,17 +144,10 @@ func (pm *PeerManager) processBlockAdded(block *block.Block) {
 		panic(err.Error())
 	}
 }
-func (pm *PeerManager) processTransactionAdded(transaction *Transaction) {
+func (pm *PeerManager) processTransactionAdded(transaction *transaction.Transaction) {
 	pm.Mutex.Lock()
 	defer pm.Mutex.Unlock()
-	pm.TransactionPool = append(pm.TransactionPool, &Transaction{
-		TransactionHash: transaction.TransactionHash,
-		From:            transaction.From,
-		To:              transaction.To,
-		Data:            transaction.Data,
-		Timestamp:       transaction.Timestamp,
-		Status:          transaction.Status,
-	})
+	pm.TransactionPool = append(pm.TransactionPool, transaction)
 	err := PutIntoDb(*pm)
 	if err != nil {
 		panic(err.Error())
@@ -187,7 +164,7 @@ func (pm *PeerManager) GetBlockchain() []*RemoteBlock {
 	return pm.Blocks
 }
 
-func (pm *PeerManager) GetTransactionPool() []*Transaction {
+func (pm *PeerManager) GetTransactionPool() []*transaction.Transaction {
 	pm.Mutex.Lock()
 	defer pm.Mutex.Unlock()
 	return pm.TransactionPool
@@ -221,11 +198,11 @@ func (pm *PeerManager) GetTransactionPoolLength() int {
 //			panic(err.Error())
 //		}
 //	}
-func (pm *PeerManager) UpdateTransactionPool(Transactions []*Transaction) {
+func (pm *PeerManager) UpdateTransactionPool(Transactions []*transaction.Transaction) {
 	pm.Mutex.Lock()
 	defer pm.Mutex.Unlock()
 	for _, Transaction := range Transactions {
-		Transaction := &Transaction{
+		Transaction := &transaction.Transaction{
 			TransactionHash: Transaction.TransactionHash,
 			From:            Transaction.From,
 			To:              Transaction.To,
@@ -308,7 +285,7 @@ func (pm *PeerManager) SendPeersList(address string) {
 	http.Post(ourURL, "application/json", bytes.NewBuffer(data))
 }
 
-func (rbc Transaction) BlockToJson() string {
+func BlockToJson(rbc *transaction.Transaction) string {
 	nb, err := json.Marshal(rbc)
 
 	if err != nil {
@@ -387,17 +364,17 @@ func (pm *PeerManager) DialAndUpdatePeers() {
 
 // For LocalTransaction
 
-func (pm *PeerManager) SendTxnToThePeer(address string, txn *Transaction) {
-	data := txn.BlockToJson()
+func (pm *PeerManager) SendTxnToThePeer(address string, txn *transaction.Transaction) {
+	data := BlockToJson(txn)
 	ourURL := fmt.Sprintf("%s/send_txn", address)
 	http.Post(ourURL, "application/json", strings.NewReader(data))
 }
 
-func (pm *PeerTransactionBroadcaster) BroadcastTransaction(txn *Transaction, excludeAddress string) {
+func (pm *PeerTransactionBroadcaster) BroadcastTransaction(txn *transaction.Transaction, excludeAddress string) {
 	for peer, status := range pm.PeerManager.Peers { // Access peer list somehow
 		if peer != excludeAddress && status.Status {
 			// ... logic for sending the transaction (like your current SendTxnToThePeer)
-			log.Println("Broadcasting LocalTransaction to the peer:", peer, "Transaction:", txn.BlockToJson())
+			log.Println("Broadcasting LocalTransaction to the peer:", peer, "Transaction:", BlockToJson(txn))
 
 			pm.PeerManager.SendTxnToThePeer(peer, txn)
 			time.Sleep(constants.TXN_BROADCAST_PAUSE_TIME * time.Second)
@@ -459,72 +436,17 @@ func verifyLastNBlocks(chain []*RemoteBlock) bool {
 	return true
 }
 
-func (pm *PeerManager) UpdateBlockchain(chain []*RemoteBlock) {
-	pm.Mutex.Lock()
-	defer pm.Mutex.Unlock()
-
-	blocks := []*RemoteBlock{}
-	initBlockNumber := chain[0].BlockNumber + 1
-	if len(pm.Blocks) > int(initBlockNumber) {
-		for _, block := range pm.Blocks[:initBlockNumber] {
-			blocks = append(blocks, block)
-		}
-	}
-	log.Println("Updating our blockchain from block number", initBlockNumber)
-	for _, block := range pm.Blocks[:initBlockNumber] {
-		blocks = append(blocks, &RemoteBlock{*&pm.BlockNumber, *&pm.PrevHash, *&pm.Timestamp, *&pm.Nonce, pm.Transactions}, block)
-	}
-	blocks = append(blocks, chain...)
-
-	pm.Blocks = make([]*RemoteBlock, len(blocks))
-	for i, block := range blocks {
-		pm.Blocks[i] = block
-	}
-
-	// update the transaction pool
-	found := map[string]bool{}
-	for _, txn := range pm.TransactionPool {
-		found[txn.Transaction.TransactionHash] = false
-	}
-
-	for _, block := range chain {
-		for _, txn := range block.Transactions {
-			_, ok := found[txn.Transaction.TransactionHash]
-			if ok {
-				found[txn.Transaction.TransactionHash] = true
-			}
-		}
-	}
-
-	newTxnPool := []*Transaction{}
-	for _, txn := range pm.TransactionPool {
-		if !found[txn.Transaction.TransactionHash] {
-			newTxnPool = append(newTxnPool, txn)
-		}
-	}
-
-	pm.TransactionPool = make([]*Transaction, len(newTxnPool))
-	for i, txn := range newTxnPool {
-		pm.TransactionPool[i] = txn
-	}
-
-	// save the blockchain in the database
-	err := PutIntoDb(*pm)
-	if err != nil {
-		panic(err.Error())
-	}
-}
-func (pm *PeerManager) FetchLastNBlocksFromPeer(w http.ResponseWriter, req *http.Request) {
+func (pm *PeerManager) HandleRequest(w http.ResponseWriter, req *http.Request) {
 	w.Header().Add("Content-Type", "application/json")
 	if req.Method == http.MethodGet {
 		peer := req.URL.Query().Get("peer")
-		bc1, err := FetchLastNBlocks(peer)
+		_, err := FetchLastNBlocks(peer)
 		if err != nil {
 			log.Println("Error while  fetching last n blocks from peer:", peer, "Error:", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		io.WriteString(w, ToJson())
+		io.WriteString(w, string(pm.PeersToJson()))
 	} else {
 		http.Error(w, "Invalid Method", http.StatusBadRequest)
 	}

@@ -7,9 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"time"
 
-	"KNIRVCHAIN-MAIN/block"
 	"KNIRVCHAIN-MAIN/blockchain"
 	"KNIRVCHAIN-MAIN/constants"
 	"KNIRVCHAIN-MAIN/events"
@@ -20,6 +18,7 @@ import (
 type BlockchainServer struct {
 	Port          uint64                       `json:"port"`
 	BlockchainPtr *blockchain.BlockchainStruct `json:"blockchain"`
+	MiningLocked  bool                         `json:"mining_locked"`
 }
 
 func NewBlockchainServer(port uint64, blockchainPtr *blockchain.BlockchainStruct) *BlockchainServer {
@@ -161,73 +160,6 @@ func (bcs *BlockchainServer) FetchLastNBlocks(w http.ResponseWriter, req *http.R
 	} else {
 		http.Error(w, "Invalid Method", http.StatusBadRequest)
 	}
-}
-
-func (bcs *BlockchainServer) RunConsensus() {
-
-	for {
-		log.Println("Starting the consensus algorithm...")
-		longestChain := bcs.BlockchainPtr.Blocks
-		lengthOfTheLongestChain := bcs.BlockchainPtr.Blocks[len(bcs.BlockchainPtr.Blocks)-1].BlockNumber + 1
-		longestChainIsOur := true
-		Peers := bcs.BlockchainPtr.Peers
-		for peer, status := range Peers {
-			if peer != bcs.BlockchainPtr.Address && status {
-				bc1, err := peerManager.FetchLastNBlocks(peer)
-				if err != nil {
-					log.Println("Error while  fetching last n blocks from peer:", peer, "Error:", err.Error())
-					continue
-				}
-
-				lengthOfTheFetchedChain := bc1.Blocks[len(bc1.Blocks)-1].BlockNumber + 1
-				if lengthOfTheFetchedChain > lengthOfTheLongestChain {
-					longestChain = bcs.BlockchainPtr.Blocks
-					lengthOfTheLongestChain = lengthOfTheFetchedChain
-					longestChainIsOur = false
-				}
-			}
-		}
-
-		if longestChainIsOur {
-			log.Println("My chain is longest, thus I am not updating my blockchain")
-			time.Sleep(constants.CONSENSUS_PAUSE_TIME * time.Second)
-			continue
-		}
-
-		remoteBlocks := make([]*block.Block, len(longestChain))
-		for i, block := range longestChain {
-			remoteBlocks[i] = &block.Block{
-				BlockNumber:  block.BlockNumber,
-				PrevHash:     block.PrevHash,
-				Timestamp:    block.Timestamp,
-				Nonce:        block.Nonce,
-				Transactions: block.Transactions,
-			}
-		}
-		if verifyLastNBlocks(remoteBlocks) {
-			// stop the Mining until updation
-			bcs.MiningLocked = true
-			remoteBlocks := make([]*block.Block, len(longestChain))
-			for i, block := range longestChain {
-				remoteBlocks[i] = &block.Block{
-					BlockNumber:  block.BlockNumber,
-					PrevHash:     block.PrevHash,
-					Timestamp:    block.Timestamp,
-					Nonce:        block.Nonce,
-					Transactions: block.Transactions,
-				}
-			}
-			bcs.UpdateBlockchain(remoteBlocks)
-			// restart the Mining as updation is complete
-			bcs.MiningLocked = false
-			log.Println("Updation of Blockchain complete !!!")
-		} else {
-			log.Println("Chain Verification Failed, Hence not updating my blockchain")
-		}
-
-		time.Sleep(constants.CONSENSUS_PAUSE_TIME * time.Second)
-	}
-
 }
 
 func (bcs *BlockchainServer) Start() {
