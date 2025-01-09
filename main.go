@@ -14,7 +14,7 @@ import (
 	"KNIRVCHAIN-MAIN/block"
 	"KNIRVCHAIN-MAIN/blockchain"
 	"KNIRVCHAIN-MAIN/blockchainserver"
-	consensus "KNIRVCHAIN-MAIN/consensusManager"
+	consensus "KNIRVCHAIN-MAIN/consensusmanager/consensus_manager"
 	"KNIRVCHAIN-MAIN/constants"
 	"KNIRVCHAIN-MAIN/events"
 	"KNIRVCHAIN-MAIN/peerManager"

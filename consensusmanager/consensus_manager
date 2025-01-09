@@ -1,4 +1,4 @@
-package consensus manager
+package consensusmanager
 
 import (
 	"blockchain/block"
