@@ -13,14 +13,13 @@ import (
 
 	"github.com/joho/godotenv"
 
-	"KNIRVCHAIN-MAIN/block"
 	"KNIRVCHAIN-MAIN/blockchain"
 	"KNIRVCHAIN-MAIN/blockchainserver"
-	"KNIRVCHAIN-MAIN/consensus"
+
 	"KNIRVCHAIN-MAIN/constants"
 	"KNIRVCHAIN-MAIN/events"
 	"KNIRVCHAIN-MAIN/peerManager"
-	"KNIRVCHAIN-MAIN/transaction"
+	"KNIRVCHAIN-MAIN/transactionBroadcaster"
 	"KNIRVCHAIN-MAIN/walletserver"
 )
 
@@ -182,16 +181,15 @@ func main() {
 		miningStopped := make(chan bool)
 
 		var bcs *blockchainserver.BlockchainServer
-		var consensusMgr *consensus.ConsensusManager
+		var consensusMgr *blockchain.ConsensusManager
 		var pm *peerManager.PeerManager
 		var blockchain1 *blockchain.BlockchainStruct
 
 		blockAddedChan := make(chan events.BlockAddedEvent)
-		transactionAddedChan := make(chan events.TransactionAddedEvent)
-		pm = consensus.GetPeerManager(blockAddedChan, transactionAddedChan)
+		pm = blockchain.GetPeerManager(blockAddedChan, transactionBroadcaster.TransactionAddedChan)
 
 		if *remoteNode == "" {
-			genesisBlock := block.NewBlock("0x0", 0, 0)
+			genesisBlock := blockchain.NewBlock("0x0", 0, 0)
 
 			pm.Address = "http://127.0.0.1:" + strconv.Itoa(int(*chainPort))
 
@@ -199,10 +197,10 @@ func main() {
 			blockchain1 = blockchain.NewBlockchain(*genesisBlock, pm.Address, &pm.Broadcaster, pm)
 			blockchain1.Peers[blockchain1.Address] = true
 			bcs = blockchainserver.NewBlockchainServer(*chainPort, blockchain1)
-			consensusMgr = consensus.NewConsensusManager(blockchain1, pm)
+			consensusMgr = blockchain.NewConsensusManager(blockchain1, pm)
 			go func() { // This goroutine MUST start AFTER blockchain1 is initialized
-				for event := range blockchain1.TransactionAdded {
-					pm.UpdateTransactionPool([]*transaction.Transaction{event.Transaction})
+				for transactionBroadcaster := range blockchain1.TransactionAdded {
+					pm.UpdateTransactionPool([]*blockchain.Transaction{transactionBroadcaster.TransactionEvent})
 				}
 			}()
 
@@ -222,11 +220,11 @@ func main() {
 			blockchain1 = blockchain.NewBlockchainFromSync(remotePeerManager.Blocks, pm.Address, &pm.Broadcaster, pm)
 			blockchain1.Peers[blockchain1.Address] = true
 			bcs = blockchainserver.NewBlockchainServer(*chainPort, blockchain1)
-			consensusMgr = consensus.NewConsensusManager(blockchain1, pm)
+			consensusMgr = blockchain.NewConsensusManager(blockchain1, pm)
 
 			go func() { // This goroutine MUST start AFTER blockchain1 is initialized
-				for event := range blockchain1.TransactionAdded {
-					pm.UpdateTransactionPool([]*transaction.Transaction{event.Transaction})
+				for transactionBroadcaster := range blockchain1.TransactionAdded {
+					pm.UpdateTransactionPool([]*blockchain.Transaction{transactionBroadcaster.TransactionAddedEvent})
 				}
 			}()
 

@@ -8,23 +8,23 @@ import (
 	"time"
 
 	"KNIRVCHAIN-MAIN/constants"
-	"KNIRVCHAIN-MAIN/events"
+
 	"KNIRVCHAIN-MAIN/peerManager"
-	"KNIRVCHAIN-MAIN/transaction"
+
 	"KNIRVCHAIN-MAIN/transactionBroadcaster"
 )
 
 type BlockchainStruct struct {
-	TransactionPool  []*Transaction                                `json:"transaction_pool"`
-	Blocks           []*Block                                      `json:"block_chain"`
-	Address          string                                        `json:"address"`
-	Peers            map[string]bool                               `json:"peers"`
-	MiningLocked     bool                                          `json:"mining_locked"`
-	Broadcaster      transactionBroadcaster.TransactionBroadcaster `json:"-"`
-	BlockAdded       chan events.BlockAddedEvent                   `json:"-"`
-	TransactionAdded chan events.TransactionAddedEvent             `json:"-"`
-	PeerManager      *peerManager.PeerManager                      `json:"-"`
-	Mutex            sync.Mutex                                    `json:"-"`
+	TransactionPool  []*Transaction                                    `json:"transaction_pool"`
+	Blocks           []*Block                                          `json:"block_chain"`
+	Address          string                                            `json:"address"`
+	Peers            map[string]bool                                   `json:"peers"`
+	MiningLocked     bool                                              `json:"mining_locked"`
+	Broadcaster      transactionBroadcaster.TransactionBroadcaster     `json:"-"`
+	BlockAdded       chan transactionBroadcaster.BlockAddedEvent       `json:"-"`
+	TransactionAdded chan transactionBroadcaster.TransactionAddedEvent `json:"-"`
+	PeerManager      *peerManager.PeerManager                          `json:"-"`
+	Mutex            sync.Mutex                                        `json:"-"`
 }
 
 var mutex sync.Mutex
@@ -48,8 +48,8 @@ func NewBlockchain(genesisBlock Block, address string, broadcaster transactionBr
 		blockchainStruct.Address = address
 		blockchainStruct.Peers = map[string]bool{}
 		blockchainStruct.MiningLocked = false
-		blockchainStruct.BlockAdded = make(chan events.BlockAddedEvent)
-		blockchainStruct.TransactionAdded = make(chan events.TransactionAddedEvent)
+		blockchainStruct.BlockAdded = make(chan transactionBroadcaster.BlockAddedEvent)
+		blockchainStruct.TransactionAdded = make(chan transactionBroadcaster.TransactionAddedEvent)
 		blockchainStruct.Broadcaster = broadcaster
 		blockchainStruct.PeerManager = peerManager
 		blockchainStruct.Mutex = sync.Mutex{}
@@ -176,7 +176,7 @@ func (bc *BlockchainStruct) BroadcastLocalTransaction(txn *Transaction) {
 	//bc.TransactionAdded <- events.TransactionAddedEvent{Transaction: txn} // Send the event to the event channel
 }
 
-func (bc *BlockchainStruct) simulatedBalanceCheck(valid1 bool, transaction *transaction.Transaction) bool {
+func (bc *BlockchainStruct) simulatedBalanceCheck(valid1 bool, transaction *Transaction) bool {
 	balance := bc.CalculateTotalCrypto(transaction.From)
 	for _, txn := range bc.TransactionPool {
 		if transaction.From == txn.From && valid1 {

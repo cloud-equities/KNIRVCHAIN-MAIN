@@ -10,7 +10,6 @@ import (
 
 	"KNIRVCHAIN-MAIN/blockchain"
 	"KNIRVCHAIN-MAIN/constants"
-	
 )
 
 type BlockchainServer struct {
@@ -96,7 +95,7 @@ func (bcs *BlockchainServer) handleGetTransactions(w http.ResponseWriter, r *htt
 func (bcs *BlockchainServer) SendTxnToTheBlockchain(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if req.Method == http.MethodPost {
-		var txn := new(Transaction)
+		var txn = blockchain.Transaction{}
 		if err := json.NewDecoder(req.Body).Decode(&txn); err != nil {
 			http.Error(w, "Invalid transaction format", http.StatusBadRequest)
 			return
