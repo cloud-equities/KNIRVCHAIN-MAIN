@@ -3,7 +3,8 @@
 # local env files
 .env*.local
 .env
-
+.vscode
+/constants
 
 # dependencies
 /node_modules

@@ -14,6 +14,7 @@ import (
 	"KNIRVCHAIN-MAIN/block"
 	"KNIRVCHAIN-MAIN/blockchain"
 	"KNIRVCHAIN-MAIN/blockchainserver"
+	consensus "KNIRVCHAIN-MAIN/consensusManager"
 	"KNIRVCHAIN-MAIN/constants"
 	"KNIRVCHAIN-MAIN/events"
 	"KNIRVCHAIN-MAIN/peerManager"
@@ -181,7 +182,7 @@ func main() {
 				transactionAddedChan := make(chan events.TransactionAddedEvent)
 				pm := peerManager.GetPeerManager(blockAddedChan, transactionAddedChan)
 
-				blockchain2 := blockchain.NewBlockchainFromSync(blockchain1, "http://127.0.0.1:"+strconv.Itoa(int(*chainPort)), &pm.Broadcaster)
+				blockchain2 := blockchain.NewBlockchainFromSync(blockchain1, "http://127.0.0.1:"+strconv.Itoa(int(*chainPort)), &peerManager.PeerManager{})
 				blockchain2.Peers[blockchain2.Address] = true
 				bcs := blockchainserver.NewBlockchainServer(*chainPort, blockchain2)
 				wg.Add(4)

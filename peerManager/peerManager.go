@@ -139,24 +139,21 @@ func (pm *PeerManager) processBlockAdded(block *block.Block) {
 		Nonce:        block.Nonce,
 		Transactions: block.Transactions,
 	})
-	err := PutIntoDb(*pm)
-	if err != nil {
-		panic(err.Error())
-	}
+
 }
 func (pm *PeerManager) processTransactionAdded(transaction *transaction.Transaction) {
 	pm.Mutex.Lock()
 	defer pm.Mutex.Unlock()
 	pm.TransactionPool = append(pm.TransactionPool, transaction)
-	err := PutIntoDb(*pm)
-	if err != nil {
-		panic(err.Error())
-	}
+
 }
-func (pm *PeerManager) convertBlockToRemoteBlock(block *block.Block) *RemoteBlock {
-	// ... conversion logic (similar to what you had before)
-	return &RemoteBlock{ /* ... */ }
-}
+
+//func (pm *PeerManager) convertBlockToRemoteBlock(*block.Block) *RemoteBlock {
+// Convert the block to a RemoteBlock
+
+// ... conversion logic (similar to what you had before)
+//	return &RemoteBlock{ /* ... */ }
+//}
 
 func (pm *PeerManager) GetBlockchain() []*RemoteBlock {
 	pm.Mutex.Lock()
@@ -214,10 +211,7 @@ func (pm *PeerManager) UpdateTransactionPool(Transactions []*transaction.Transac
 		}
 		pm.TransactionPool = append(pm.TransactionPool, Transaction)
 	}
-	err := PutIntoDb(*pm)
-	if err != nil {
-		panic(err.Error())
-	}
+
 }
 func (pm *PeerManager) UpdatePeers(peersList map[string]bool) {
 	pm.Mutex.Lock()
@@ -236,20 +230,13 @@ func (pm *PeerManager) UpdatePeers(peersList map[string]bool) {
 
 		}
 	}
-	err := PutIntoDb(*pm)
-	if err != nil {
-		panic(err.Error())
-	}
 
 }
 func (pm *PeerManager) UpdatePeer(peer Peer) {
 	pm.Mutex.Lock()
 	defer pm.Mutex.Unlock()
-	pm.Peer = peer
-	err := PutIntoDb(*pm)
-	if err != nil {
-		panic(err.Error())
-	}
+
+	pm.Peers[peer.ID] = peer
 
 }
 
@@ -370,13 +357,13 @@ func (pm *PeerManager) SendTxnToThePeer(address string, txn *transaction.Transac
 	http.Post(ourURL, "application/json", strings.NewReader(data))
 }
 
-func (pm *PeerTransactionBroadcaster) BroadcastTransaction(txn *transaction.Transaction, excludeAddress string) {
-	for peer, status := range pm.PeerManager.Peers { // Access peer list somehow
+func (pm *PeerManager) BroadcastTransaction(txn *transaction.Transaction, excludeAddress string) {
+	for peer, status := range pm.PeerTransactionBroadcaster.PeerManager.Peers { // Access peer list somehow
 		if peer != excludeAddress && status.Status {
 			// ... logic for sending the transaction (like your current SendTxnToThePeer)
 			log.Println("Broadcasting LocalTransaction to the peer:", peer, "Transaction:", BlockToJson(txn))
 
-			pm.PeerManager.SendTxnToThePeer(peer, txn)
+			pm.PeerTransactionBroadcaster.PeerManager.SendTxnToThePeer(peer, txn)
 			time.Sleep(constants.TXN_BROADCAST_PAUSE_TIME * time.Second)
 
 		}

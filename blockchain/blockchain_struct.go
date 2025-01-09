@@ -19,8 +19,8 @@ type BlockchainStruct struct {
 	Peers            map[string]bool                    `json:"peers"`
 	MiningLocked     bool                               `json:"mining_locked"`
 	Broadcaster      transaction.TransactionBroadcaster `json:"-"`
-	BlockAdded       chan events.BlockAddedEvent
-	TransactionAdded chan events.TransactionAddedEvent
+	BlockAdded       chan events.BlockAddedEvent        `json:"-"`
+	TransactionAdded chan events.TransactionAddedEvent  `json:"-"`
 }
 
 var mutex sync.Mutex
@@ -130,17 +130,6 @@ func (bc *BlockchainStruct) AddTransactionToTransactionPool(transaction *transac
 
 	log.Println("Adding txn to the Transaction pool")
 
-	bc.appendTransactionToTheTransactionPool(transaction)
-	newTxn := &events.TransactionAddedEvent{
-		From:      transaction.From,
-		To:        transaction.To,
-		Data:      transaction.Data,
-		Timestamp: transaction.Timestamp,
-		Status:    transaction.Status,
-		PublicKey: transaction.PublicKey,
-		Signature: transaction.Signature,
-	}
-
 	valid1 := transaction.VerifyTxn()
 
 	valid2 := bc.simulatedBalanceCheck(valid1, transaction)
@@ -154,8 +143,6 @@ func (bc *BlockchainStruct) AddTransactionToTransactionPool(transaction *transac
 	transaction.PublicKey = ""
 
 	bc.appendTransactionToTheTransactionPool(transaction)
-
-	newTxn.PublicKey = ""
 
 	bc.BroadcastLocalTransaction(transaction)
 
